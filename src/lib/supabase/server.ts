@@ -2,7 +2,8 @@ import "server-only";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "../types/database";
-import { requireSupabaseEnv, requireSupabaseServiceEnv } from "./env";
+import { requireSupabaseEnv } from "./env";
+import { requireSupabaseServiceEnv } from "./env.server";
 
 export async function createServerClient() {
   const { getToken } = await auth();

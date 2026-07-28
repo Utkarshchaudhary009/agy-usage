@@ -1,3 +1,5 @@
+"use client";
+
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "../types/database";
 import { requireSupabaseEnv } from "./env";
