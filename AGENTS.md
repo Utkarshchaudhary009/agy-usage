@@ -30,15 +30,15 @@ Track progress by checking off tasks directly in the plan: turn `- [ ]` into `- 
 
 ## Reference Repos
 
-Two reference CLI tools are vendored under `refrence-repo/` as read-only implementation references:
+Two reference CLI tools are vendored under `reference-repo/` as read-only implementation references:
 
-- `refrence-repo/antigravity-usage/` — TypeScript CLI for quota checking. Port its `token-manager.ts`, `cloudcode.ts`, and `parser.ts` logic to server-side modules.
-- `refrence-repo/ccusage/` — Rust CLI with pricing data. Use its `models-dev-pricing.json` for cost estimation.
+- `reference-repo/antigravity-usage/` — TypeScript CLI for quota checking. Port its `token-manager.ts`, `cloudcode.ts`, and `parser.ts` logic to server-side modules.
+- `reference-repo/ccusage/` — Rust CLI with pricing data. Use its `models-dev-pricing.json` for cost estimation.
 
 **Rules:**
 - Prefer patterns from vendored source code over generated guesses or web search
-- Do not edit files under `refrence-repo/`
-- Do not import from `refrence-repo/` — application code uses its own modules
+- Do not edit files under `reference-repo/`
+- Do not import from `reference-repo/` — application code uses its own modules
 - When porting logic, adapt for server-side Next.js (async, `server-only`, Supabase storage) rather than copying CLI patterns verbatim
 
 ## Project Structure
@@ -69,7 +69,7 @@ src/
   middleware.ts                     # Clerk auth middleware
 
 docs/plans/                         # Implementation plan (source of truth)
-refrence-repo/                      # Vendored reference CLIs (read-only)
+reference-repo/                      # Vendored reference CLIs (read-only)
 supabase/migrations/                # SQL migration files
 ```
 
