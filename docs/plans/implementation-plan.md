@@ -7,7 +7,7 @@
 > **Tech Stack**:
 > - **Next.js 16** (App Router) -- Frontend + API routes
 > - **Clerk** -- User authentication (sign up / sign in / session management)
-> - **Supabase** -- Database (Postgres) + Realtime subscriptions (NO Supabase Auth)
+> - **Supabase** -- Database (Postgres) + Realtime subscriptions. Uses Clerk Native Third-Party Auth (JWKS) for RLS.
 > - **Inngest** -- Background jobs, cron jobs, event-driven workflows
 > - **Vercel** -- Hosting + Edge network
 > - **Tailwind CSS 4** + **TypeScript 5**
@@ -239,11 +239,30 @@ CREATE INDEX idx_google_accounts_clerk ON public.google_accounts (clerk_user_id)
 CREATE INDEX idx_google_tokens_expires ON public.google_tokens (expires_at);
 ```
 
+- [ ] Create PostgreSQL helper for Clerk Native Auth:
+  ```sql
+  CREATE OR REPLACE FUNCTION requesting_user_id()
+  RETURNS TEXT AS $$
+    SELECT auth.jwt() ->> 'sub';
+  $$ LANGUAGE sql STABLE;
+  ```
+- [ ] Enable Row Level Security (RLS) on all tables:
+  ```sql
+  ALTER TABLE public.google_accounts ENABLE ROW LEVEL SECURITY;
+  CREATE POLICY "Users can manage their own accounts" ON public.google_accounts
+    FOR ALL TO authenticated USING (requesting_user_id() = clerk_user_id);
+
+  ALTER TABLE public.google_tokens ENABLE ROW LEVEL SECURITY;
+  CREATE POLICY "Users can manage their own tokens" ON public.google_tokens
+    FOR ALL TO authenticated USING (
+      EXISTS (SELECT 1 FROM public.google_accounts WHERE id = google_tokens.account_id AND clerk_user_id = requesting_user_id())
+    );
+  ```
+- [ ] Configure Supabase External OAuth Provider to use Clerk's JWKS endpoint (no JWT Templates needed).
+- [ ] Update `src/lib/supabase/server.ts` to initialize using the standard Clerk session token (`await auth().getToken()`) in the `Authorization` header.
 - [ ] Create TypeScript types for all tables in `src/lib/types/database.ts`
 
-**Note**: No RLS policies needed here. Since we're NOT using Supabase Auth, RLS based on `auth.uid()` won't work. Instead, we use the `service_role` key server-side and enforce access control in our API routes via Clerk's `auth()`. The browser client only connects for Realtime subscriptions on non-sensitive tables.
-
-**Deliverable**: Supabase project with core schema, TypeScript types ready.
+**Deliverable**: Supabase project with core schema, native third-party Clerk integration for RLS, and TypeScript types ready.
 
 **Files**:
 ```
@@ -762,13 +781,25 @@ src/app/api/accounts/[id]/refresh-token/route.ts
         // Query all accounts with active tokens
       })
 
-      // Fan out: fetch quota for each account
-      for (const account of accounts) {
-        await step.run(`fetch-quota-${account.id}`, async () => {
-          const snapshot = await fetchQuotaForAccount(account.id)
-          await saveSnapshot(account.id, snapshot)
-        })
+      // Fan out: Use coordinator pattern to emit events for parallel execution
+      const events = accounts.map(account => ({
+        name: 'quota/fetch.requested',
+        data: { accountId: account.id }
+      }))
+      
+      if (events.length > 0) {
+        await step.sendEvent('dispatch-quota-fetches', events)
       }
+    }
+  )
+
+  export const fetchQuotaHandler = inngest.createFunction(
+    { id: 'fetch-account-quota', name: 'Fetch Quota for Account', retries: 3 },
+    { event: 'quota/fetch.requested' },
+    async ({ event, step }) => {
+      const { accountId } = event.data
+      const snapshot = await step.run('fetch-api', () => fetchQuotaForAccount(accountId))
+      await step.run('save-db', () => saveSnapshot(accountId, snapshot))
     }
   )
   ```
@@ -1258,8 +1289,8 @@ README.md                           # Updated
 
 1. **Clerk for app auth**: Pre-built UI components, session management, middleware protection. No custom auth code needed.
 2. **Custom Google OAuth for account linking**: Clerk can't provide `cloud-platform` scope needed for Cloud Code API. Separate OAuth flow stores tokens in Supabase.
-3. **Supabase as database only**: No Supabase Auth (Clerk handles that). Service role key for all server-side queries. Application-level access control via `clerk_user_id` filtering.
-4. **Inngest for all background work**: Cron jobs (quota polling, wakeup scheduling), event-driven fan-out (per-user triggers), built-in retries, concurrency control, observability dashboard. Replaces Vercel Cron's limited 60s timeout and no-retry model.
+3. **Clerk Native Third-Party Auth with Supabase**: Supabase Auth is completely bypassed. Instead, Supabase directly verifies Clerk session tokens via JWKS. Access control uses true PostgreSQL Row Level Security (RLS) via a custom `requesting_user_id()` function reading the `sub` claim.
+4. **Inngest for all background work**: Cron jobs (quota polling, wakeup scheduling), event-driven fan-out (per-user triggers), built-in retries, concurrency control, observability dashboard. Replaces Vercel Cron's limited 60s timeout and no-retry model. Employs the **coordinator pattern** to maximize parallel execution and isolate failures.
 5. **Server-side only tokens**: Google tokens never sent to browser. All API calls proxied through Next.js API routes.
 6. **AES-256-GCM token encryption**: Tokens encrypted at application level before storing in Supabase.
 7. **JSONB for quota snapshots**: Flexible schema for evolving API responses without migrations.
