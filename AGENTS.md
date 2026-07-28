@@ -30,7 +30,7 @@ Track progress by checking off tasks directly in the plan: turn `- [ ]` into `- 
 
 ## Reference Repos
 
-Two reference CLI tools are vendored under `refrence-repo/` as read-only implementation references:
+Two reference CLI tools are vendored under `reference-repo/` as read-only implementation references:
 
 - `reference-repo/antigravity-usage/` — TypeScript CLI for quota checking. Port its `token-manager.ts`, `cloudcode.ts`, and `parser.ts` logic to server-side modules.
 - `reference-repo/ccusage/` — Rust CLI with pricing data. Use its `models-dev-pricing.json` for cost estimation.
@@ -69,7 +69,7 @@ src/
   middleware.ts                     # Clerk auth middleware
 
 docs/plans/                         # Implementation plan (source of truth)
-refrence-repo/                      # Vendored reference CLIs (read-only)
+reference-repo/                      # Vendored reference CLIs (read-only)
 supabase/migrations/                # SQL migration files
 ```
 
