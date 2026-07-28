@@ -279,11 +279,11 @@ supabase/migrations/001_core_schema.sql
 **Feature**: User authentication via Clerk (sign up / sign in / session management)
 
 **Tasks**:
-- [ ] Configure Clerk project at clerk.com:
+- [x] Configure Clerk project at clerk.com:
   - Enable Email/password sign-in
   - Enable Google social connection (this is for APP login only, NOT Cloud Code)
   - Set redirect URLs
-- [ ] Create Clerk middleware `src/middleware.ts`:
+- [x] Create Clerk middleware `src/middleware.ts`:
   ```typescript
   import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 
@@ -307,22 +307,22 @@ supabase/migrations/001_core_schema.sql
     ],
   }
   ```
-- [ ] Create sign-in page `src/app/sign-in/[[...sign-in]]/page.tsx`:
+- [x] Create sign-in page `src/app/sign-in/[[...sign-in]]/page.tsx`:
   ```typescript
   import { SignIn } from '@clerk/nextjs'
   export default function SignInPage() {
     return <SignIn />
   }
   ```
-- [ ] Create sign-up page `src/app/sign-up/[[...sign-up]]/page.tsx`:
+- [x] Create sign-up page `src/app/sign-up/[[...sign-up]]/page.tsx`:
   ```typescript
   import { SignUp } from '@clerk/nextjs'
   export default function SignUpPage() {
     return <SignUp />
   }
   ```
-- [ ] Wrap app with `ClerkProvider` in `src/app/layout.tsx`
-- [ ] Add `<UserButton />` to header for profile/logout
+- [x] Wrap app with `ClerkProvider` in `src/app/layout.tsx`
+- [x] Add `<UserButton />` to header for profile/logout
 
 **Deliverable**: Users can create accounts and log in. All dashboard routes are protected. Clerk handles sessions, tokens, and UI components.
 

@@ -124,7 +124,7 @@ gh pr create --base main --title "Phase {N}: {Title}" --body "..."
 
 ### 6. Wait for GitHub Review
 
-- Wait 10 minutes after PR creation
+- Run `Write-Host "Waiting 10 minutes for code review..."; Start-Sleep -Seconds 600` in the terminal.
 - Check for reviews from AI agents or developers on GitHub: `gh pr view --comments`
 - Address all review feedback, push fixes, and iterate until approved
 
