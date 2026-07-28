@@ -2,7 +2,7 @@
 
 > **Goal**: Build a cloud-based web dashboard (Next.js + Supabase + Vercel) that shows Antigravity coding agent quota/usage for all accounts. No laptop needed -- just open a website and get all details.
 
-> **Reference Repos**: `refrence-repo/antigravity-usage/` (TypeScript CLI), `refrence-repo/ccusage/` (Rust CLI)
+> **Reference Repos**: `reference-repo/antigravity-usage/` (TypeScript CLI), `reference-repo/ccusage/` (Rust CLI)
 
 > **Tech Stack**:
 > - **Next.js 16** (App Router) -- Frontend + API routes

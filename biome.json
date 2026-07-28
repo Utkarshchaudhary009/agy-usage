@@ -13,7 +13,7 @@
       "!.next",
       "!dist",
       "!build",
-      "!refrence-repo"
+      "!reference-repo"
     ]
   },
   "formatter": {
