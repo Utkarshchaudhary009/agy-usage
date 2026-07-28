@@ -143,15 +143,15 @@ There are only **two ways** to get quota data:
 **Feature**: Dev environment, linting, formatting, project config
 
 **Tasks**:
-- [ ] Clean the default Next.js scaffold (remove boilerplate from `page.tsx`, `globals.css`)
-- [ ] Install core dependencies:
+- [x] Clean the default Next.js scaffold (remove boilerplate from `page.tsx`, `globals.css`)
+- [x] Install core dependencies:
   - `@clerk/nextjs` -- Authentication
   - `@supabase/supabase-js` -- Database client
   - `inngest` -- Background jobs & cron
   - `server-only` -- Prevent server code from leaking to client
-- [ ] Install UI dependencies: `lucide-react` (icons), `clsx`, `tailwind-merge`
-- [ ] Configure `biome.json` with strict TypeScript rules
-- [ ] Create `.env.local.example` with all required env vars:
+- [x] Install UI dependencies: `lucide-react` (icons), `clsx`, `tailwind-merge`
+- [x] Configure `biome.json` with strict TypeScript rules
+- [x] Create `.env.local.example` with all required env vars:
   ```
   # Clerk
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
@@ -175,8 +175,8 @@ There are only **two ways** to get quota data:
   INNGEST_EVENT_KEY=
   INNGEST_SIGNING_KEY=
   ```
-- [ ] Set up `src/lib/` directory structure
-- [ ] Create `tsconfig.json` path aliases (`@/` for `src/`)
+- [x] Set up `src/lib/` directory structure
+- [x] Create `tsconfig.json` path aliases (`@/` for `src/`)
 
 **Deliverable**: Clean project scaffold with all tooling configured, `bun dev` runs without errors.
 
