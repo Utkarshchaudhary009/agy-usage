@@ -2,43 +2,28 @@ import "server-only";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "../types/database";
+import { requireSupabaseEnv, requireSupabaseServiceEnv } from "./env";
 
 export async function createServerClient() {
   const { getToken } = await auth();
   const token = await getToken();
 
-  if (
-    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  ) {
-    throw new Error("Missing Supabase env vars");
-  }
+  const { url, anonKey } = requireSupabaseEnv();
 
-  return createClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    {
-      global: {
-        headers: token
-          ? {
-              Authorization: `Bearer ${token}`,
-            }
-          : undefined,
-      },
+  return createClient<Database>(url, anonKey, {
+    global: {
+      headers: token
+        ? {
+            Authorization: `Bearer ${token}`,
+          }
+        : undefined,
     },
-  );
+  });
 }
 
 // For background jobs or cases where we don't have a user context (like Inngest)
 export function createServiceClient() {
-  if (
-    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    !process.env.SUPABASE_SERVICE_ROLE_KEY
-  ) {
-    throw new Error("Missing Supabase env vars");
-  }
-  return createClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
-  );
+  const { url, serviceKey } = requireSupabaseServiceEnv();
+
+  return createClient<Database>(url, serviceKey);
 }

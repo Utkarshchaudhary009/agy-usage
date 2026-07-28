@@ -9,10 +9,10 @@ CREATE TABLE public.google_accounts (
   clerk_user_id TEXT NOT NULL,
   email TEXT NOT NULL,
   display_name TEXT,
-  is_active BOOLEAN DEFAULT false,
-  token_status TEXT DEFAULT 'active' CHECK (token_status IN ('active', 'expired', 'revoked')),
-  added_at TIMESTAMPTZ DEFAULT NOW(),
-  last_used_at TIMESTAMPTZ DEFAULT NOW(),
+  is_active BOOLEAN NOT NULL DEFAULT false,
+  token_status TEXT NOT NULL DEFAULT 'active' CHECK (token_status IN ('active', 'expired', 'revoked')),
+  added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_used_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(clerk_user_id, email)
 );
 
