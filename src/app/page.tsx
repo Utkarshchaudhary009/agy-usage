@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function Home() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
@@ -10,18 +12,18 @@ export default function Home() {
           all Google accounts. Sign in with Clerk to get started.
         </p>
         <div className="flex gap-4 justify-center">
-          <a
+          <Link
             href="/sign-in"
             className="px-6 py-3 bg-gray-900 text-white rounded-lg hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200 transition-colors"
           >
             Sign In
-          </a>
-          <a
+          </Link>
+          <Link
             href="/sign-up"
             className="px-6 py-3 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
           >
             Sign Up
-          </a>
+          </Link>
         </div>
       </main>
     </div>
