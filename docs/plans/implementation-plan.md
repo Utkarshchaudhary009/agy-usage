@@ -195,11 +195,11 @@ biome.json                  # Updated rules
 **Feature**: Database schema for accounts, tokens, cache (Supabase is database-only -- Clerk handles auth)
 
 **Tasks**:
-- [ ] Create Supabase project (or configure existing one)
-- [ ] Create Supabase client utilities:
+- [x] Create Supabase project (or configure existing one)
+- [x] Create Supabase client utilities:
   - `src/lib/supabase/client.ts` -- Browser client (for Realtime subscriptions only)
   - `src/lib/supabase/server.ts` -- Server-side client (service role, for API routes + Inngest)
-- [ ] Create migration for core tables:
+- [x] Create migration for core tables:
 
 ```sql
 -- supabase/migrations/001_core_schema.sql
@@ -239,14 +239,14 @@ CREATE INDEX idx_google_accounts_clerk ON public.google_accounts (clerk_user_id)
 CREATE INDEX idx_google_tokens_expires ON public.google_tokens (expires_at);
 ```
 
-- [ ] Create PostgreSQL helper for Clerk Native Auth:
+- [x] Create PostgreSQL helper for Clerk Native Auth:
   ```sql
   CREATE OR REPLACE FUNCTION requesting_user_id()
   RETURNS TEXT AS $$
     SELECT auth.jwt() ->> 'sub';
   $$ LANGUAGE sql STABLE;
   ```
-- [ ] Enable Row Level Security (RLS) on all tables:
+- [x] Enable Row Level Security (RLS) on all tables:
   ```sql
   ALTER TABLE public.google_accounts ENABLE ROW LEVEL SECURITY;
   CREATE POLICY "Users can manage their own accounts" ON public.google_accounts
@@ -258,9 +258,9 @@ CREATE INDEX idx_google_tokens_expires ON public.google_tokens (expires_at);
       EXISTS (SELECT 1 FROM public.google_accounts WHERE id = google_tokens.account_id AND clerk_user_id = requesting_user_id())
     );
   ```
-- [ ] Configure Supabase External OAuth Provider to use Clerk's JWKS endpoint (no JWT Templates needed).
-- [ ] Update `src/lib/supabase/server.ts` to initialize using the standard Clerk session token (`await auth().getToken()`) in the `Authorization` header.
-- [ ] Create TypeScript types for all tables in `src/lib/types/database.ts`
+- [x] Configure Supabase External OAuth Provider to use Clerk's JWKS endpoint (no JWT Templates needed).
+- [x] Update `src/lib/supabase/server.ts` to initialize using the standard Clerk session token (`await auth().getToken()`) in the `Authorization` header.
+- [x] Create TypeScript types for all tables in `src/lib/types/database.ts`
 
 **Deliverable**: Supabase project with core schema, native third-party Clerk integration for RLS, and TypeScript types ready.
 
