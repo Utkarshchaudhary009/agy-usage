@@ -343,7 +343,7 @@ src/app/sign-up/[[...sign-up]]/page.tsx
 **Tasks**:
 - [x] Create the dashboard layout `src/app/(dashboard)/layout.tsx`:
   - Sidebar navigation (collapsible on mobile)
-  - Top header with Clerk `<UserButton />` + breadcrumbs
+  - Top header with Clerk `<UserButton />`, `MobileNav`, and `ThemeToggle`
   - Main content area
 - [x] Navigation items:
   - Dashboard (home) -- quota overview
@@ -355,9 +355,9 @@ src/app/sign-up/[[...sign-up]]/page.tsx
   - `src/components/ui/card.tsx`
   - `src/components/ui/button.tsx`
   - `src/components/ui/badge.tsx`
-  - `src/components/ui/progress-bar.tsx`
+  - `src/components/ui/progress.tsx`
   - `src/components/ui/skeleton.tsx` (loading states)
-  - `src/components/ui/toast.tsx` (notifications)
+  - `src/components/ui/sonner.tsx` (notifications)
 - [x] Create dashboard home page placeholder `src/app/(dashboard)/page.tsx`
 - [x] Mobile-responsive design (hamburger menu, stacked cards)
 - [x] Dark mode support via Tailwind

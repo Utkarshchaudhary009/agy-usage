@@ -7,6 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 export default async function Home() {
   const { userId } = await auth();
@@ -35,28 +36,22 @@ export default async function Home() {
 
   // If not logged in, render the landing page
   return (
-    <div className="min-h-[calc(100vh-140px)] flex items-center justify-center bg-background">
+    <div className="flex min-h-screen items-center justify-center bg-background">
       <main className="text-center px-8">
-        <h1 className="text-4xl font-bold text-foreground mb-4">
+        <h1 className="mb-4 text-4xl font-bold text-foreground">
           Antigravity Usage Dashboard
         </h1>
-        <p className="text-lg text-muted-foreground mb-8 max-w-md mx-auto">
+        <p className="mx-auto mb-8 max-w-md text-lg text-muted-foreground">
           Cloud-based dashboard for Antigravity coding agent quota/usage across
           all Google accounts. Sign in with Clerk to get started.
         </p>
-        <div className="flex gap-4 justify-center">
-          <Link
-            href="/sign-in"
-            className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-          >
-            Sign In
-          </Link>
-          <Link
-            href="/sign-up"
-            className="px-6 py-3 border border-border rounded-lg text-foreground hover:bg-muted transition-colors"
-          >
-            Sign Up
-          </Link>
+        <div className="flex justify-center gap-4">
+          <Button asChild size="lg">
+            <Link href="/sign-in">Sign In</Link>
+          </Button>
+          <Button asChild variant="outline" size="lg">
+            <Link href="/sign-up">Sign Up</Link>
+          </Button>
         </div>
       </main>
     </div>

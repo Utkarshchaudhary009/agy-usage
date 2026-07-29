@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  Activity,
-  Clock,
-  LayoutDashboard,
-  Menu,
-  Settings,
-  Users,
-} from "lucide-react";
+import { Activity, Menu } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import * as React from "react";
@@ -20,14 +13,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-
-const navigation = [
-  { name: "Dashboard", href: "/", icon: LayoutDashboard },
-  { name: "Accounts", href: "/accounts", icon: Users },
-  { name: "Wakeup", href: "/wakeup", icon: Clock },
-  { name: "History", href: "/history", icon: Activity },
-  { name: "Settings", href: "/settings", icon: Settings },
-];
+import { navigation, isRouteActive } from "@/lib/navigation";
 
 export function MobileNav() {
   const [open, setOpen] = React.useState(false);
@@ -59,14 +45,13 @@ export function MobileNav() {
             <span>Antigravity</span>
           </Link>
           {navigation.map((item) => {
-            const isActive =
-              pathname === item.href ||
-              (item.href !== "/" && pathname.startsWith(item.href));
+            const isActive = isRouteActive(pathname, item.href);
             return (
               <Link
                 key={item.name}
                 href={item.href}
                 onClick={() => setOpen(false)}
+                aria-current={isActive ? "page" : undefined}
                 className={cn(
                   "mx-[-0.65rem] flex items-center gap-4 rounded-xl px-3 py-2 hover:text-foreground",
                   isActive
