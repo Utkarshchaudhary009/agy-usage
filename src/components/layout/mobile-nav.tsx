@@ -12,8 +12,8 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { isRouteActive, navigation } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
-import { navigation, isRouteActive } from "@/lib/navigation";
 
 export function MobileNav() {
   const [open, setOpen] = React.useState(false);

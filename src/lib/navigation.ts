@@ -1,4 +1,10 @@
-import { LayoutDashboard, Users, Clock, Activity, Settings } from "lucide-react";
+import {
+  Activity,
+  Clock,
+  LayoutDashboard,
+  Settings,
+  Users,
+} from "lucide-react";
 
 export const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },

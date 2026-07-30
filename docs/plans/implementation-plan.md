@@ -389,11 +389,11 @@ src/components/ui/toast.tsx
 **Why this exists**: Clerk authenticates users into our app. But to read quota from Google's Cloud Code API, we need Google OAuth tokens with `cloud-platform` scope. Clerk's Google sign-in doesn't provide this scope. So we build a separate "Link Account" flow.
 
 **Tasks**:
-- [ ] Create Google Cloud Console OAuth 2.0 credentials:
+- [x] Create Google Cloud Console OAuth 2.0 credentials:
   - Application type: Web application
   - Authorized redirect URI: `{APP_URL}/api/auth/google/callback`
   - Note `client_id` and `client_secret` → env vars
-- [ ] Create Google OAuth configuration (server-only):
+- [x] Create Google OAuth configuration (server-only):
   - `src/lib/google/oauth-config.ts`:
   ```typescript
   // server-only
@@ -409,13 +409,13 @@ src/components/ui/toast.tsx
     redirectUri: `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/google/callback`,
   }
   ```
-- [ ] Build "Link Account" API route `src/app/api/auth/google/link/route.ts`:
+- [x] Build "Link Account" API route `src/app/api/auth/google/link/route.ts`:
   - Verify Clerk session via `auth()` -- must be logged in
   - Generate PKCE code verifier + challenge
   - Generate random `state` token
   - Store `{ verifier, state, clerkUserId }` in encrypted httpOnly cookie
   - Redirect to Google consent screen with `access_type=offline`, `prompt=consent`
-- [ ] Build OAuth callback handler `src/app/api/auth/google/callback/route.ts`:
+- [x] Build OAuth callback handler `src/app/api/auth/google/callback/route.ts`:
   - Verify `state` matches cookie (CSRF protection)
   - Exchange auth code for tokens via `POST https://oauth2.googleapis.com/token`
   - Fetch user email via `GET https://www.googleapis.com/oauth2/v2/userinfo`
@@ -423,11 +423,11 @@ src/components/ui/toast.tsx
   - Upsert into `google_accounts` + `google_tokens` using Clerk userId from cookie
   - Clear OAuth cookie
   - Redirect to `/accounts` with success flash
-- [ ] Create token encryption utilities `src/lib/google/token-crypto.ts`:
+- [x] Create token encryption utilities `src/lib/google/token-crypto.ts`:
   - `encryptToken(plaintext: string): string` -- AES-256-GCM with random IV
   - `decryptToken(ciphertext: string): string` -- decrypt
   - Key from `TOKEN_ENCRYPTION_KEY` env var (32-byte hex string)
-- [ ] Handle edge cases:
+- [x] Handle edge cases:
   - Account already linked → update tokens silently
   - Google consent denied → redirect with error message
   - Token exchange failure → redirect with error message
