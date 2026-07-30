@@ -126,7 +126,7 @@ gh pr create --base main --title "Phase {N}: {Title}" --body "..."
 
 You MUST wait for asynchronous code reviews to complete. Never skip this step. Do not merge without waiting.
 
-1. Run exactly this command in the terminal: `Start-Sleep -Seconds 600`
+1. Run exactly this command in the terminal (PowerShell): `Start-Sleep -Seconds 600` (or `sleep 600` for bash/zsh)
 2. After 10 minutes, check for comments: `gh pr view --comments`
 3. Address all requested changes, push fixes, and repeat step 2 until all feedback is resolved.
 

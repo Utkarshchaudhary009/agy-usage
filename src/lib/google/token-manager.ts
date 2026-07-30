@@ -30,6 +30,16 @@ export const getValidAccessToken = cache(async function getValidAccessToken(
     ? createServiceClient()
     : await createServerClient();
 
+  const { data: accountData } = await supabase
+    .from("google_accounts")
+    .select("token_status")
+    .eq("id", accountId)
+    .single();
+
+  if (accountData?.token_status === "revoked") {
+    throw new TokenRefreshError("Refresh token has been revoked or is invalid");
+  }
+
   // 1. Get token metadata and access token securely in one round-trip
   const { data: tokenMeta, error: metaError } = await supabase.rpc(
     "get_valid_token_metadata",
@@ -92,11 +102,7 @@ export const getValidAccessToken = cache(async function getValidAccessToken(
           .catch(() => ({}))) as Record<string, unknown>;
 
         // Check if permanent error (revoked)
-        if (
-          errorData.error === "invalid_grant" ||
-          tokenResponse.status === 400 ||
-          tokenResponse.status === 401
-        ) {
+        if (errorData.error === "invalid_grant") {
           await supabase
             .from("google_accounts")
             .update({ token_status: "revoked" })
@@ -106,17 +112,21 @@ export const getValidAccessToken = cache(async function getValidAccessToken(
           );
         }
 
-        // For other 5xx or network-like errors, we can retry
-        if (attempt < MAX_RETRIES && tokenResponse.status >= 500) {
-          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
-          continue;
-        }
-
-        // For 4xx errors (other than 400/401 handled above), do not retry
+        // For 4xx errors, do not retry
         if (tokenResponse.status >= 400 && tokenResponse.status < 500) {
           throw new TokenRefreshError(
             `Failed to refresh token: ${tokenResponse.status} ${JSON.stringify(errorData)}`,
           );
+        }
+
+        // For 5xx errors, we can retry
+        if (tokenResponse.status >= 500) {
+          if (attempt < MAX_RETRIES) {
+            await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+            continue;
+          }
+          // Final attempt failed
+          throw new Error(`Failed to refresh token: ${tokenResponse.status}`);
         }
 
         throw new Error(`Failed to refresh token: ${tokenResponse.status}`);
@@ -128,6 +138,15 @@ export const getValidAccessToken = cache(async function getValidAccessToken(
       if (err instanceof TokenRefreshError) {
         throw err; // Don't retry permanent errors
       }
+
+      if (
+        attempt === MAX_RETRIES &&
+        err instanceof Error &&
+        err.message.startsWith("Failed to refresh token:")
+      ) {
+        throw err; // Don't wrap our deliberate terminal error messages
+      }
+
       if (attempt < MAX_RETRIES) {
         await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
         continue;
@@ -184,6 +203,16 @@ export const isTokenValid = cache(async function isTokenValid(
     ? createServiceClient()
     : await createServerClient();
 
+  const { data: account, error: accountError } = await supabase
+    .from("google_accounts")
+    .select("token_status")
+    .eq("id", accountId)
+    .single();
+
+  if (accountError || !account || account.token_status === "revoked") {
+    return false;
+  }
+
   const { data, error } = await supabase
     .from("google_tokens")
     .select("expires_at")
@@ -216,13 +245,20 @@ export async function revokeAccount(
       .select("id")
       .single();
 
-    if (error && error.code === "PGRST116") {
-      throw new Error("Not authorized to revoke this account");
+    if (error) {
+      if (error.code === "PGRST116") {
+        throw new Error("Not authorized to revoke this account");
+      }
+      throw new Error(`Failed to revoke account: ${error.message}`);
     }
   } else {
-    await supabase
+    const { error } = await supabase
       .from("google_accounts")
       .update({ token_status: "revoked" })
       .eq("id", accountId);
+
+    if (error) {
+      throw new Error(`Failed to revoke account: ${error.message}`);
+    }
   }
 }

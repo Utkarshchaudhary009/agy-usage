@@ -114,7 +114,7 @@ export interface Database {
         Returns: {
           access_token: string;
           expires_at: string;
-        };
+        } | null;
       };
     };
     Enums: {

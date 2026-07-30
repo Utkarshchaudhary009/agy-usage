@@ -109,3 +109,10 @@ BEGIN
   RETURN v_token;
 END;
 $body LANGUAGE plpgsql;
+
+-- Restrict access to these sensitive RPCs to service_role only
+REVOKE EXECUTE ON FUNCTION public.get_decrypted_refresh_token(UUID) FROM PUBLIC, authenticated, anon;
+GRANT EXECUTE ON FUNCTION public.get_decrypted_refresh_token(UUID) TO service_role;
+
+REVOKE EXECUTE ON FUNCTION public.get_decrypted_access_token(UUID) FROM PUBLIC, authenticated, anon;
+GRANT EXECUTE ON FUNCTION public.get_decrypted_access_token(UUID) TO service_role;
