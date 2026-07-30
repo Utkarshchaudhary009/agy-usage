@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { type NextRequest, NextResponse } from "next/server";
 import { GOOGLE_OAUTH } from "@/lib/google/oauth-config";
 import { decryptToken as decryptState } from "@/lib/google/state-crypto";
 import { createServerClient } from "@/lib/supabase/server";
@@ -124,7 +124,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           token_status: "active",
         })
         .eq("id", accountId);
-        
+
       if (updateError) {
         console.error("Account update failed:", updateError);
         return NextResponse.redirect(
@@ -138,7 +138,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         .select("id", { count: "exact", head: true })
         .eq("clerk_user_id", cookieData.clerkUserId)
         .eq("is_active", true);
-        
+
       if (countError) {
         console.error("Active accounts count failed:", countError);
         return NextResponse.redirect(

@@ -1,8 +1,16 @@
 import "server-only";
 
+if (!process.env.GOOGLE_CLIENT_ID) {
+  throw new Error("Missing GOOGLE_CLIENT_ID environment variable");
+}
+
+if (!process.env.GOOGLE_CLIENT_SECRET) {
+  throw new Error("Missing GOOGLE_CLIENT_SECRET environment variable");
+}
+
 export const GOOGLE_OAUTH = {
-  clientId: process.env.GOOGLE_CLIENT_ID!,
-  clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+  clientId: process.env.GOOGLE_CLIENT_ID,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
   authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
   tokenUrl: "https://oauth2.googleapis.com/token",
   scopes: [

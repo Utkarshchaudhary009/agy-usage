@@ -93,13 +93,28 @@ export interface Database {
           p_refresh_token: string;
           p_expires_at: string;
         };
-        Returns: void;
+        Returns: undefined;
+      };
+      get_decrypted_access_token: {
+        Args: {
+          p_account_id: string;
+        };
+        Returns: string;
       };
       get_decrypted_refresh_token: {
         Args: {
           p_account_id: string;
         };
         Returns: string;
+      };
+      get_valid_token_metadata: {
+        Args: {
+          p_account_id: string;
+        };
+        Returns: {
+          access_token: string;
+          expires_at: string;
+        } | null;
       };
     };
     Enums: {

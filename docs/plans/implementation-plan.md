@@ -450,7 +450,7 @@ src/app/api/auth/google/callback/route.ts
 **Feature**: Server-side token management with automatic refresh (ported from CLI's `token-manager.ts`)
 
 **Tasks**:
-- [ ] Create `src/lib/google/token-manager.ts` (server-only):
+- [x] Create `src/lib/google/token-manager.ts` (server-only):
   ```typescript
   import 'server-only'
 
@@ -470,11 +470,11 @@ src/app/api/auth/google/callback/route.ts
   export async function isTokenValid(accountId: string): Promise<boolean>
   export async function revokeAccount(accountId: string): Promise<void>
   ```
-- [ ] Handle refresh failures:
+- [x] Handle refresh failures:
   - `invalid_grant` → refresh token revoked by user → set `token_status = 'revoked'`
   - Network errors → retry once, then throw
   - Unknown errors → log and throw
-- [ ] Token status transitions:
+- [x] Token status transitions:
   - `active` → tokens work normally
   - `expired` → access_token expired, auto-refresh will fix
   - `revoked` → refresh_token invalid, user must re-link via OAuth
