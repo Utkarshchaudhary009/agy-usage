@@ -115,22 +115,26 @@ Fix all issues found. Iterate until reviews pass clean.
 
 ### 5. Create PR
 
-```
+```bash
 git add -A
 git commit -m "phase {N}: {description}"
 git push origin phase-{N}-{short-description}
 gh pr create --base main --title "Phase {N}: {Title}" --body "..."
 ```
 
-### 6. Wait for GitHub Review
+### 6. Wait for Review (MANDATORY)
 
-- Run `Write-Host "Waiting 10 minutes for code review..."; Start-Sleep -Seconds 600` in the terminal (Note: this is a PowerShell command).
-- Check for reviews from AI agents or developers on GitHub: `gh pr view --comments`
-- Address all review feedback, push fixes, and iterate until approved
+You MUST wait for asynchronous code reviews to complete. Never skip this step. Do not merge without waiting.
 
-### 7. Merge and Move On
+1. Run exactly this command in the terminal: `Start-Sleep -Seconds 600`
+2. After 10 minutes, check for comments: `gh pr view --comments`
+3. Address all requested changes, push fixes, and repeat step 2 until all feedback is resolved.
 
-```
+### 7. Merge
+
+Only merge AFTER the 10-minute wait has completed and all feedback is addressed.
+
+```bash
 gh pr merge --squash
 git checkout main
 git pull origin main

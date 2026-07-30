@@ -83,3 +83,29 @@ BEGIN
   RETURN v_token;
 END;
 $$ LANGUAGE plpgsql;
+
+-- RPC to retrieve access token securely via Vault
+CREATE OR REPLACE FUNCTION public.get_decrypted_access_token(p_account_id UUID)
+RETURNS TEXT
+SECURITY DEFINER
+SET search_path = public, vault
+AS $body
+DECLARE
+  v_secret_id UUID;
+  v_token TEXT;
+BEGIN
+  IF current_setting('request.jwt.claims', true)::json->>'role' != 'service_role' THEN
+    IF NOT EXISTS (SELECT 1 FROM public.google_accounts WHERE id = p_account_id AND clerk_user_id = public.requesting_user_id()) THEN
+      RAISE EXCEPTION 'Not authorized';
+    END IF;
+  END IF;
+
+  SELECT access_token_secret_id INTO v_secret_id FROM public.google_tokens WHERE account_id = p_account_id;
+  
+  IF v_secret_id IS NOT NULL THEN
+    SELECT decrypted_secret INTO v_token FROM vault.decrypted_secrets WHERE id = v_secret_id;
+  END IF;
+
+  RETURN v_token;
+END;
+$body LANGUAGE plpgsql;
