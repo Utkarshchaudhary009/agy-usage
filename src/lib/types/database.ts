@@ -103,21 +103,6 @@ export interface Database {
           },
         ];
       };
-      rate_limits: {
-        Row: {
-          clerk_user_id: string;
-          timestamps: string[];
-        };
-        Insert: {
-          clerk_user_id: string;
-          timestamps?: string[];
-        };
-        Update: {
-          clerk_user_id?: string;
-          timestamps?: string[];
-        };
-        Relationships: [];
-      };
     };
     Views: {
       [_ in never]: never;

@@ -619,7 +619,7 @@ src/lib/google/project-resolver.ts
   - `GET /api/quota?refresh=true` → force refresh (skip cache)
   - Returns `{ snapshots: QuotaSnapshot[], cachedAt: string }`
   - Validates that requested account belongs to the authenticated user
-- [x] Add rate limiting: max 10 force-refreshes per minute per user
+- [x] Add rate limiting: max 10 force-refreshes per minute per user using Upstash Redis (`@upstash/ratelimit`)
 
 **Deliverable**: Frontend can fetch quota data via API. Data is cached for 5 minutes. Parallel multi-account fetching works.
 
