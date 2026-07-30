@@ -536,7 +536,7 @@ src/lib/types/cloudcode.ts
 **Feature**: Parse Cloud Code API responses into normalized quota data (ported from CLI's `parser.ts`)
 
 **Tasks**:
-- [ ] Create quota types `src/lib/types/quota.ts`:
+- [x] Create quota types `src/lib/types/quota.ts`:
   ```typescript
   export interface QuotaSnapshot {
     timestamp: string
@@ -568,13 +568,13 @@ src/lib/types/cloudcode.ts
     remainingPercentage: number
   }
   ```
-- [ ] Create parser `src/lib/google/parser.ts`:
+- [x] Create parser `src/lib/google/parser.ts`:
   - `parseQuotaSnapshot(codeAssist, models, email, accountId): QuotaSnapshot`
   - Filter autocomplete models by default (same logic as CLI `--all-models` flag)
   - Calculate `timeUntilResetMs` from `resetTime`
   - Handle missing/null fields gracefully
   - Normalize model names (strip prefixes, apply aliases)
-- [ ] Create project ID resolver `src/lib/google/project-resolver.ts`:
+- [x] Create project ID resolver `src/lib/google/project-resolver.ts`:
   - `resolveProjectId(accountId): Promise<string>`
   - Check `google_tokens.project_id` first (cached)
   - If missing → call `loadCodeAssist` → extract `cloudaicompanionProject`
