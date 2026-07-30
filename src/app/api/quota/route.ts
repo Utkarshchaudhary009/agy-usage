@@ -3,38 +3,42 @@ import { auth } from "@clerk/nextjs/server";
 import { getQuotaAllAccounts, getQuota } from "@/lib/quota/service";
 import { createServerClient } from "@/lib/supabase/server";
 
-// Simple in-memory rate limiting for refresh requests
-// Maps userId -> timestamps of refresh requests
-const refreshRateLimits = new Map<string, number[]>();
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const MAX_REFRESHES_PER_MIN = 10;
 
-function checkRateLimit(userId: string): boolean {
-  const now = Date.now();
-  let timestamps = refreshRateLimits.get(userId) || [];
+async function checkRateLimit(userId: string): Promise<boolean> {
+  const supabase = await createServerClient();
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - RATE_LIMIT_WINDOW_MS);
 
-  // Filter out timestamps older than the window
-  timestamps = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+  // Get current timestamps
+  const { data } = await supabase
+    .from("rate_limits")
+    .select("timestamps")
+    .eq("clerk_user_id", userId)
+    .single();
+
+  let timestamps: Date[] = [];
+  if (data?.timestamps) {
+    timestamps = data.timestamps
+      .map((ts) => new Date(ts))
+      .filter((ts) => ts > cutoff);
+  }
 
   if (timestamps.length >= MAX_REFRESHES_PER_MIN) {
-    refreshRateLimits.set(userId, timestamps); // update map with cleaned timestamps
+    await supabase.from("rate_limits").upsert({
+      clerk_user_id: userId,
+      timestamps: timestamps.map((ts) => ts.toISOString()),
+    });
     return false;
   }
 
   timestamps.push(now);
-  refreshRateLimits.set(userId, timestamps);
 
-  // Cleanup occasionally for other users
-  if (Math.random() < 0.1) {
-    for (const [key, tsArray] of Array.from(refreshRateLimits.entries())) {
-      const validTs = tsArray.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
-      if (validTs.length === 0) {
-        refreshRateLimits.delete(key);
-      } else {
-        refreshRateLimits.set(key, validTs);
-      }
-    }
-  }
+  await supabase.from("rate_limits").upsert({
+    clerk_user_id: userId,
+    timestamps: timestamps.map((ts) => ts.toISOString()),
+  });
 
   return true;
 }
@@ -58,7 +62,7 @@ export async function GET(req: NextRequest) {
   const refresh = searchParams.get("refresh") === "true";
 
   if (refresh) {
-    if (!checkRateLimit(userId)) {
+    if (!(await checkRateLimit(userId))) {
       return NextResponse.json(
         {
           error: "Rate Limit Exceeded",
@@ -118,7 +122,7 @@ export async function GET(req: NextRequest) {
       {
         error: "Internal Server Error",
         code: "INTERNAL_ERROR",
-        message: error.message || "Failed to fetch quota data",
+        message: "Failed to fetch quota data",
       },
       { status: 500 },
     );

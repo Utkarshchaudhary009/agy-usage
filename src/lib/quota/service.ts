@@ -70,11 +70,15 @@ export async function getCachedQuota(
 async function saveToCache(accountId: string, snapshot: QuotaSnapshot) {
   const supabase = await createServerClient();
 
-  await supabase.from("quota_cache").upsert({
+  const { error } = await supabase.from("quota_cache").upsert({
     account_id: accountId,
     snapshot: snapshot as any,
     cached_at: new Date().toISOString(),
   });
+
+  if (error) {
+    console.error("Failed to save quota to cache:", error);
+  }
 }
 
 export async function getQuota(
@@ -105,7 +109,11 @@ export async function getQuotaAllAccounts(
     .eq("clerk_user_id", clerkUserId)
     .eq("is_active", true);
 
-  if (error || !accounts) {
+  if (error) {
+    throw new Error(`Failed to fetch accounts: ${error.message}`);
+  }
+
+  if (!accounts) {
     return [];
   }
 

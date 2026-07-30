@@ -597,7 +597,7 @@ src/lib/google/project-resolver.ts
 **Feature**: API endpoint to fetch quota data with 5-minute cache layer
 
 **Tasks**:
-- [x] Create quota cache table migration `002_quota_cache.sql`:
+- [x] Create quota cache table migration `004_quota_cache.sql`:
   ```sql
   CREATE TABLE public.quota_cache (
     account_id UUID REFERENCES public.google_accounts(id) ON DELETE CASCADE PRIMARY KEY,
