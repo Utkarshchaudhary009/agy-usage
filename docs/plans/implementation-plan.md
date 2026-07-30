@@ -493,7 +493,7 @@ src/lib/google/token-manager.ts
 **Feature**: Server-side Google Cloud Code API client (ported from CLI's `cloudcode.ts`)
 
 **Tasks**:
-- [ ] Create `src/lib/google/cloudcode-client.ts`:
+- [x] Create `src/lib/google/cloudcode-client.ts`:
   - `loadCodeAssist(accessToken: string): Promise<LoadCodeAssistResponse>`
     - POST `https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist`
     - Body: `{ metadata: { ideType: "ANTIGRAVITY", platform: "PLATFORM_UNSPECIFIED", pluginType: "GEMINI" } }`
@@ -508,12 +508,12 @@ src/lib/google/token-manager.ts
     - POST `https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse`
     - Used for wakeup triggers
     - Reads first SSE chunk, aborts connection (minimal token usage)
-- [ ] Create response types `src/lib/types/cloudcode.ts` (ported from CLI's types)
-- [ ] Add error handling:
+- [x] Create response types `src/lib/types/cloudcode.ts` (ported from CLI's types)
+- [x] Add error handling:
   - 401/403 → mark account `token_status = 'revoked'`
   - 429 → rate limited, return retry-after header value
   - 5xx → server error, throw retryable error
-- [ ] Create `src/lib/google/errors.ts` with typed error classes:
+- [x] Create `src/lib/google/errors.ts` with typed error classes:
   ```typescript
   export class CloudCodeAuthError extends Error { accountId: string }
   export class CloudCodeRateLimitError extends Error { retryAfterMs: number }
