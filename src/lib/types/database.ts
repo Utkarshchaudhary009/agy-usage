@@ -77,6 +77,32 @@ export interface Database {
           },
         ];
       };
+      quota_cache: {
+        Row: {
+          account_id: string;
+          snapshot: Json;
+          cached_at: string;
+        };
+        Insert: {
+          account_id: string;
+          snapshot: Json;
+          cached_at?: string;
+        };
+        Update: {
+          account_id?: string;
+          snapshot?: Json;
+          cached_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "quota_cache_account_id_fkey";
+            columns: ["account_id"];
+            isOneToOne: true;
+            referencedRelation: "google_accounts";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: {
       [_ in never]: never;

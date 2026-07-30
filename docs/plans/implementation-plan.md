@@ -597,7 +597,7 @@ src/lib/google/project-resolver.ts
 **Feature**: API endpoint to fetch quota data with 5-minute cache layer
 
 **Tasks**:
-- [ ] Create quota cache table migration `002_quota_cache.sql`:
+- [x] Create quota cache table migration `002_quota_cache.sql`:
   ```sql
   CREATE TABLE public.quota_cache (
     account_id UUID REFERENCES public.google_accounts(id) ON DELETE CASCADE PRIMARY KEY,
@@ -607,19 +607,19 @@ src/lib/google/project-resolver.ts
 
   CREATE INDEX idx_quota_cache_time ON public.quota_cache (cached_at);
   ```
-- [ ] Create quota service `src/lib/quota/service.ts`:
+- [x] Create quota service `src/lib/quota/service.ts`:
   - `fetchQuotaForAccount(accountId): Promise<QuotaSnapshot>` -- fresh from API
   - `getCachedQuota(accountId): Promise<{ snapshot: QuotaSnapshot; fresh: boolean } | null>` -- check cache (5 min TTL)
   - `getQuota(accountId, forceRefresh): Promise<QuotaSnapshot>` -- cache-first, fetch if stale
   - `getQuotaAllAccounts(clerkUserId, forceRefresh): Promise<QuotaSnapshot[]>` -- parallel fetch all accounts
-- [ ] Create API route `src/app/api/quota/route.ts`:
+- [x] Create API route `src/app/api/quota/route.ts`:
   - Verify Clerk auth via `auth()` → get `userId`
   - `GET /api/quota` → all accounts for current user
   - `GET /api/quota?account=<id>` → specific account
   - `GET /api/quota?refresh=true` → force refresh (skip cache)
   - Returns `{ snapshots: QuotaSnapshot[], cachedAt: string }`
   - Validates that requested account belongs to the authenticated user
-- [ ] Add rate limiting: max 10 force-refreshes per minute per user
+- [x] Add rate limiting: max 10 force-refreshes per minute per user
 
 **Deliverable**: Frontend can fetch quota data via API. Data is cached for 5 minutes. Parallel multi-account fetching works.
 
