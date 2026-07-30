@@ -27,6 +27,15 @@ function parseResetTime(resetTime?: string): number | undefined {
   return diff > 0 ? diff : undefined;
 }
 
+function isAutocompleteModel(modelId: string, displayName: string): boolean {
+  return (
+    modelId.includes("autocomplete") ||
+    displayName.toLowerCase().includes("autocomplete") ||
+    // Keep legacy check for gemini-2.5 but narrow it down if possible
+    modelId.includes("gemini-2.5-autocomplete")
+  );
+}
+
 /**
  * Check if a model should be shown in quota display
  * Filter out internal models and only show recommended ones
@@ -59,10 +68,7 @@ function shouldShowModel(
 
   // Filter out autocomplete models unless explicitly requested
   if (!includeAutocomplete) {
-    const isAutocompleteOnly =
-      modelId.includes("gemini-2.5") ||
-      (model.displayName || "").includes("Gemini 2.5");
-    if (isAutocompleteOnly) {
+    if (isAutocompleteModel(modelId, model.displayName || "")) {
       return false;
     }
   }
@@ -93,9 +99,7 @@ function parseModelInfo(modelId: string, model: ModelInfo): ModelQuotaInfo {
     isExhausted: quotaInfo?.isExhausted ?? quotaInfo?.remainingFraction === 0,
     resetTime: quotaInfo?.resetTime,
     timeUntilResetMs: parseResetTime(quotaInfo?.resetTime),
-    isAutocompleteOnly:
-      modelId.includes("gemini-2.5") ||
-      (model.displayName || "").includes("Gemini 2.5"),
+    isAutocompleteOnly: isAutocompleteModel(modelId, model.displayName || ""),
     modelProvider: model.modelProvider,
     supportsThinking: model.supportsThinking,
   };
@@ -115,8 +119,12 @@ function parsePromptCredits(
   }
 
   const used = monthly - available;
-  const usedPercentage = monthly > 0 ? used / monthly : 0;
-  const remainingPercentage = monthly > 0 ? available / monthly : 0;
+  let usedPercentage = monthly > 0 ? used / monthly : 0;
+  let remainingPercentage = monthly > 0 ? available / monthly : 0;
+
+  // Clamp percentages to 0.0 - 1.0
+  usedPercentage = Math.max(0, Math.min(1, usedPercentage));
+  remainingPercentage = Math.max(0, Math.min(1, remainingPercentage));
 
   return {
     available,
