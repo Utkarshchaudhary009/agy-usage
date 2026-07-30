@@ -6,10 +6,10 @@ let cachedKey: Buffer | null = null;
 
 const getEncryptionKey = (): Buffer => {
   if (cachedKey) return cachedKey;
-  const keyHex = process.env.TOKEN_ENCRYPTION_KEY || "";
+  const keyHex = process.env.COOKIE_ENCRYPTION_KEY || "";
   if (!keyHex || keyHex.length !== 64) {
     throw new Error(
-      "TOKEN_ENCRYPTION_KEY must be a 64-character hex string (32 bytes).",
+      "COOKIE_ENCRYPTION_KEY must be a 64-character hex string (32 bytes).",
     );
   }
   cachedKey = Buffer.from(keyHex, "hex");

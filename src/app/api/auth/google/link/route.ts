@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { GOOGLE_OAUTH } from "@/lib/google/oauth-config";
-import { encryptToken } from "@/lib/google/token-crypto";
+import { encryptToken as encryptState } from "@/lib/google/state-crypto";
 
 export async function GET() {
   const { userId } = await auth();
@@ -24,7 +24,7 @@ export async function GET() {
 
   // Store in encrypted cookie
   const cookieData = JSON.stringify({ verifier, state, clerkUserId: userId });
-  const encryptedCookieData = encryptToken(cookieData);
+  const encryptedCookieData = encryptState(cookieData);
 
   const cookieStore = await cookies();
   cookieStore.set("google_oauth_state", encryptedCookieData, {
