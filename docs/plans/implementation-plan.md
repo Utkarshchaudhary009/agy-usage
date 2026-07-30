@@ -168,8 +168,8 @@ There are only **two ways** to get quota data:
   GOOGLE_CLIENT_SECRET=
   NEXT_PUBLIC_APP_URL=http://localhost:3000
 
-  # Token encryption
-  TOKEN_ENCRYPTION_KEY=
+  # Token encryption (for state cookies)
+  COOKIE_ENCRYPTION_KEY=
 
   # Inngest
   INNGEST_EVENT_KEY=
@@ -419,14 +419,14 @@ src/components/ui/toast.tsx
   - Verify `state` matches cookie (CSRF protection)
   - Exchange auth code for tokens via `POST https://oauth2.googleapis.com/token`
   - Fetch user email via `GET https://www.googleapis.com/oauth2/v2/userinfo`
-  - Encrypt access_token + refresh_token (AES-256-GCM)
+  - Encrypt access_token + refresh_token using Supabase Vault RPC
   - Upsert into `google_accounts` + `google_tokens` using Clerk userId from cookie
   - Clear OAuth cookie
   - Redirect to `/accounts` with success flash
-- [x] Create token encryption utilities `src/lib/google/token-crypto.ts`:
-  - `encryptToken(plaintext: string): string` -- AES-256-GCM with random IV
+- [x] Create token encryption utilities `src/lib/google/state-crypto.ts`:
+  - `encryptToken(plaintext: string): string` -- AES-256-GCM for state cookie
   - `decryptToken(ciphertext: string): string` -- decrypt
-  - Key from `TOKEN_ENCRYPTION_KEY` env var (32-byte hex string)
+  - Key from `COOKIE_ENCRYPTION_KEY` env var (32-byte hex string)
 - [x] Handle edge cases:
   - Account already linked → update tokens silently
   - Google consent denied → redirect with error message
@@ -1200,8 +1200,8 @@ src/components/wakeup/cost-tracker.tsx
 - [ ] Security audit:
   - All API routes verify Clerk `auth()` before any DB access
   - All DB queries filter by `clerk_user_id` (application-level access control)
-  - Google tokens encrypted at rest (AES-256-GCM)
-  - `GOOGLE_CLIENT_SECRET` and `TOKEN_ENCRYPTION_KEY` are server-only env vars
+  - Google tokens encrypted at rest via Supabase Vault (`pgsodium`)
+  - `GOOGLE_CLIENT_SECRET` and `COOKIE_ENCRYPTION_KEY` are server-only env vars
   - `server-only` package imported in all sensitive modules
   - CSRF protection on mutation endpoints (state parameter in OAuth, SameSite cookies)
   - Rate limiting on API routes (custom middleware or library)
@@ -1292,7 +1292,7 @@ README.md                           # Updated
 3. **Clerk Native Third-Party Auth with Supabase**: Supabase Auth is completely bypassed. Instead, Supabase directly verifies Clerk session tokens via JWKS. Access control uses true PostgreSQL Row Level Security (RLS) via a custom `requesting_user_id()` function reading the `sub` claim.
 4. **Inngest for all background work**: Cron jobs (quota polling, wakeup scheduling), event-driven fan-out (per-user triggers), built-in retries, concurrency control, observability dashboard. Replaces Vercel Cron's limited 60s timeout and no-retry model. Employs the **coordinator pattern** to maximize parallel execution and isolate failures.
 5. **Server-side only tokens**: Google tokens never sent to browser. All API calls proxied through Next.js API routes.
-6. **AES-256-GCM token encryption**: Tokens encrypted at application level before storing in Supabase.
+6. **Supabase Vault token encryption**: Tokens encrypted at database level securely using pgsodium, linked via secret IDs.
 7. **JSONB for quota snapshots**: Flexible schema for evolving API responses without migrations.
 8. **5-min cache TTL**: Matches CLI behavior, prevents API abuse.
 9. **No Local Mode**: Cloud Mode is sufficient for "no laptop" goal. Local Mode requires OS-level access impossible from web.

@@ -45,24 +45,24 @@ export interface Database {
       google_tokens: {
         Row: {
           account_id: string;
-          access_token_encrypted: string;
-          refresh_token_encrypted: string;
+          access_token_secret_id: string;
+          refresh_token_secret_id: string;
           expires_at: string;
           project_id: string | null;
           updated_at: string | null;
         };
         Insert: {
           account_id: string;
-          access_token_encrypted: string;
-          refresh_token_encrypted: string;
+          access_token_secret_id: string;
+          refresh_token_secret_id: string;
           expires_at: string;
           project_id?: string | null;
           updated_at?: string | null;
         };
         Update: {
           account_id?: string;
-          access_token_encrypted?: string;
-          refresh_token_encrypted?: string;
+          access_token_secret_id?: string;
+          refresh_token_secret_id?: string;
           expires_at?: string;
           project_id?: string | null;
           updated_at?: string | null;
@@ -84,6 +84,21 @@ export interface Database {
     Functions: {
       requesting_user_id: {
         Args: Record<PropertyKey, never>;
+        Returns: string;
+      };
+      upsert_google_tokens: {
+        Args: {
+          p_account_id: string;
+          p_access_token: string;
+          p_refresh_token: string;
+          p_expires_at: string;
+        };
+        Returns: void;
+      };
+      get_decrypted_refresh_token: {
+        Args: {
+          p_account_id: string;
+        };
         Returns: string;
       };
     };
