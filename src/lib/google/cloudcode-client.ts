@@ -232,11 +232,14 @@ export async function streamGenerateContent(
     new Promise((resolve) => setTimeout(resolve, ms));
   const MAX_TRIGGER_ATTEMPTS = 3;
   let lastError: unknown;
+  let nextRetryDelay = 0;
 
   for (const baseUrl of BASE_URLS) {
     for (let attempt = 1; attempt <= MAX_TRIGGER_ATTEMPTS; attempt++) {
       if (attempt > 1) {
-        await sleep(getBackoffDelay(attempt));
+        const delay = Math.max(nextRetryDelay, getBackoffDelay(attempt));
+        await sleep(delay);
+        nextRetryDelay = 0; // Reset for next attempt
       }
 
       const url = `${baseUrl}${STREAM_PATH}`;
@@ -270,6 +273,9 @@ export async function streamGenerateContent(
             if (attempt === MAX_TRIGGER_ATTEMPTS) {
               lastError = err;
               break;
+            }
+            if (err instanceof CloudCodeRateLimitError && err.retryAfterMs) {
+              nextRetryDelay = err.retryAfterMs;
             }
             continue;
           }
