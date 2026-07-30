@@ -341,27 +341,27 @@ src/app/sign-up/[[...sign-up]]/page.tsx
 **Feature**: Main dashboard layout with navigation, sidebar, and responsive shell
 
 **Tasks**:
-- [ ] Create the dashboard layout `src/app/(dashboard)/layout.tsx`:
+- [x] Create the dashboard layout `src/app/(dashboard)/layout.tsx`:
   - Sidebar navigation (collapsible on mobile)
-  - Top header with Clerk `<UserButton />` + breadcrumbs
+  - Top header with Clerk `<UserButton />`, `MobileNav`, and `ThemeToggle`
   - Main content area
-- [ ] Navigation items:
+- [x] Navigation items:
   - Dashboard (home) -- quota overview
   - Accounts -- manage linked Google accounts
   - Wakeup -- auto-trigger config
   - History -- quota history & charts
   - Settings -- preferences
-- [ ] Build reusable UI components:
+- [x] Build reusable UI components:
   - `src/components/ui/card.tsx`
   - `src/components/ui/button.tsx`
   - `src/components/ui/badge.tsx`
-  - `src/components/ui/progress-bar.tsx`
+  - `src/components/ui/progress.tsx`
   - `src/components/ui/skeleton.tsx` (loading states)
-  - `src/components/ui/toast.tsx` (notifications)
-- [ ] Create dashboard home page placeholder `src/app/(dashboard)/page.tsx`
-- [ ] Mobile-responsive design (hamburger menu, stacked cards)
-- [ ] Dark mode support via Tailwind
-- [ ] Use Clerk's `auth()` in Server Components to get `userId`
+  - `src/components/ui/sonner.tsx` (notifications)
+- [x] Create dashboard home page placeholder `src/app/(dashboard)/page.tsx`
+- [x] Mobile-responsive design (hamburger menu, stacked cards)
+- [x] Dark mode support via Tailwind
+- [x] Use Clerk's `auth()` in Server Components to get `userId`
 
 **Deliverable**: Authenticated users see a polished dashboard shell with navigation. All pages are placeholders.
 
