@@ -3,6 +3,15 @@ import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import { loadCodeAssist, onboardUser } from "./cloudcode-client";
 import { getValidAccessToken } from "./token-manager";
 
+function extractProjectId(
+  project: string | { id?: string } | undefined,
+): string | undefined {
+  if (typeof project === "string") return project;
+  return project?.id;
+}
+
+const onboardingLocks = new Map<string, Promise<string>>();
+
 export async function resolveProjectId(
   accountId: string,
   options?: { asBackgroundJob?: boolean },
@@ -28,29 +37,33 @@ export async function resolveProjectId(
   // 2. Call loadCodeAssist to see if user has a project
   const codeAssist = await loadCodeAssist(accessToken, accountId);
 
-  let projectId: string | undefined;
-
-  if (typeof codeAssist.cloudaicompanionProject === "string") {
-    projectId = codeAssist.cloudaicompanionProject;
-  } else if (codeAssist.cloudaicompanionProject?.id) {
-    projectId = codeAssist.cloudaicompanionProject.id;
-  }
+  let projectId = extractProjectId(codeAssist.cloudaicompanionProject);
 
   // 3. If still missing, we need to onboard the user
   if (!projectId) {
-    // Pick the free tier or default tier if available
-    const tiers = codeAssist.allowedTiers || [];
-    const defaultTier = tiers.find((t) => t.isDefault) || tiers[0];
+    if (onboardingLocks.has(accountId)) {
+      projectId = await onboardingLocks.get(accountId);
+    } else {
+      const onboardPromise = (async () => {
+        // Pick the free tier or default tier if available
+        const tiers = codeAssist.allowedTiers || [];
+        const defaultTier = tiers.find((t) => t.isDefault) || tiers[0];
 
-    if (defaultTier?.id) {
-      await onboardUser(accessToken, accountId, defaultTier.id);
+        if (defaultTier?.id) {
+          await onboardUser(accessToken, accountId, defaultTier.id);
 
-      // Call loadCodeAssist again to get the newly created project ID
-      const newCodeAssist = await loadCodeAssist(accessToken, accountId);
-      if (typeof newCodeAssist.cloudaicompanionProject === "string") {
-        projectId = newCodeAssist.cloudaicompanionProject;
-      } else if (newCodeAssist.cloudaicompanionProject?.id) {
-        projectId = newCodeAssist.cloudaicompanionProject.id;
+          // Call loadCodeAssist again to get the newly created project ID
+          const newCodeAssist = await loadCodeAssist(accessToken, accountId);
+          return extractProjectId(newCodeAssist.cloudaicompanionProject);
+        }
+        return undefined;
+      })();
+
+      onboardingLocks.set(accountId, onboardPromise as Promise<string>);
+      try {
+        projectId = await onboardPromise;
+      } finally {
+        onboardingLocks.delete(accountId);
       }
     }
   }
@@ -60,10 +73,14 @@ export async function resolveProjectId(
   }
 
   // 4. Save to DB for next time
-  await supabase
+  const { error: updateError } = await supabase
     .from("google_tokens")
     .update({ project_id: projectId, updated_at: new Date().toISOString() })
     .eq("account_id", accountId);
+
+  if (updateError) {
+    throw new Error(`Failed to cache project ID: ${updateError.message}`);
+  }
 
   return projectId;
 }

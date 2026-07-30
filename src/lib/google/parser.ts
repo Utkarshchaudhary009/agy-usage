@@ -17,21 +17,25 @@ import type {
 function parseResetTime(resetTime?: string): number | undefined {
   if (!resetTime) return undefined;
 
-  try {
-    const resetDate = new Date(resetTime);
-    const now = Date.now();
-    const diff = resetDate.getTime() - now;
-    return diff > 0 ? diff : undefined;
-  } catch {
+  const resetDate = new Date(resetTime);
+  if (Number.isNaN(resetDate.getTime())) {
     return undefined;
   }
+
+  const now = Date.now();
+  const diff = resetDate.getTime() - now;
+  return diff > 0 ? diff : undefined;
 }
 
 /**
  * Check if a model should be shown in quota display
  * Filter out internal models and only show recommended ones
  */
-function shouldShowModel(modelId: string, model: ModelInfo): boolean {
+function shouldShowModel(
+  modelId: string,
+  model: ModelInfo,
+  includeAutocomplete: boolean,
+): boolean {
   // Skip internal models
   if (modelId.startsWith("chat_") || modelId.startsWith("tab_")) {
     return false;
@@ -52,6 +56,17 @@ function shouldShowModel(modelId: string, model: ModelInfo): boolean {
   if (!model.quotaInfo) {
     return false;
   }
+
+  // Filter out autocomplete models unless explicitly requested
+  if (!includeAutocomplete) {
+    const isAutocompleteOnly =
+      modelId.includes("gemini-2.5") ||
+      (model.displayName || "").includes("Gemini 2.5");
+    if (isAutocompleteOnly) {
+      return false;
+    }
+  }
+
   return true;
 }
 
@@ -119,6 +134,7 @@ export function parseQuotaSnapshot(
   modelsResponse: FetchAvailableModelsResponse,
   email: string,
   accountId: string,
+  includeAutocomplete = false,
 ): QuotaSnapshot {
   const promptCredits = parsePromptCredits(codeAssistResponse);
   const planType = codeAssistResponse.planInfo?.planType;
@@ -127,7 +143,7 @@ export function parseQuotaSnapshot(
   const models: ModelQuotaInfo[] = [];
 
   for (const [modelId, modelInfo] of Object.entries(modelsMap)) {
-    if (shouldShowModel(modelId, modelInfo)) {
+    if (shouldShowModel(modelId, modelInfo, includeAutocomplete)) {
       models.push(parseModelInfo(modelId, modelInfo));
     }
   }
