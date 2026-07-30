@@ -193,28 +193,41 @@ export async function streamGenerateContent(
       | { prompt: number; completion: number; total: number }
       | undefined;
 
-    for (const line of sseText.split("\n")) {
-      if (line.startsWith("data: ")) {
-        const jsonStr = line.substring(6);
-        if (jsonStr.trim() === "[DONE]") continue;
+    // Buffer complete SSE events (delimited by double newline)
+    const events = sseText.split("\n\n");
+    // If the stream doesn't end with \n\n, the last event is incomplete
+    if (!sseText.endsWith("\n\n")) {
+      events.pop();
+    }
 
-        try {
-          const data = JSON.parse(jsonStr);
-          const responseData = data.response || data;
-          const candidateText =
-            responseData.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (candidateText) {
-            fullText += candidateText;
+    for (const event of events) {
+      if (!event.trim()) continue;
+
+      const lines = event.split("\n");
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          const jsonStr = line.substring(6);
+          if (jsonStr.trim() === "[DONE]") continue;
+
+          try {
+            const data = JSON.parse(jsonStr);
+            const responseData = data.response || data;
+            const candidateText =
+              responseData.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (candidateText) {
+              fullText += candidateText;
+            }
+            if (responseData.usageMetadata) {
+              tokensUsed = {
+                prompt: responseData.usageMetadata.promptTokenCount || 0,
+                completion:
+                  responseData.usageMetadata.candidatesTokenCount || 0,
+                total: responseData.usageMetadata.totalTokenCount || 0,
+              };
+            }
+          } catch (err) {
+            console.error("SSE JSON parse error:", err, "Raw string:", jsonStr);
           }
-          if (responseData.usageMetadata) {
-            tokensUsed = {
-              prompt: responseData.usageMetadata.promptTokenCount || 0,
-              completion: responseData.usageMetadata.candidatesTokenCount || 0,
-              total: responseData.usageMetadata.totalTokenCount || 0,
-            };
-          }
-        } catch {
-          // Ignore parse errors for partial chunks
         }
       }
     }
