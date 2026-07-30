@@ -3,8 +3,8 @@
 import { Activity } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { isRouteActive, navigation } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
-import { navigation, isRouteActive } from "@/lib/navigation";
 
 export function Sidebar() {
   const pathname = usePathname();
