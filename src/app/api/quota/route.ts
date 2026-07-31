@@ -20,6 +20,10 @@ if (
     limiter: Ratelimit.slidingWindow(10, "1 m"),
     analytics: false,
   });
+} else {
+  console.warn(
+    "Upstash rate limiting is not configured. UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN must be set to enable rate limiting.",
+  );
 }
 
 export async function GET(req: NextRequest) {
@@ -42,18 +46,23 @@ export async function GET(req: NextRequest) {
 
   if (refresh) {
     if (ratelimit) {
-      const { success } = await ratelimit.limit(
-        `ratelimit_quota_refresh_${userId}`,
-      );
-      if (!success) {
-        return NextResponse.json(
-          {
-            error: "Rate Limit Exceeded",
-            code: "RATE_LIMIT_EXCEEDED",
-            message: "Too many force refreshes. Please try again in a minute.",
-          },
-          { status: 429 },
+      try {
+        const { success } = await ratelimit.limit(
+          `ratelimit_quota_refresh_${userId}`,
         );
+        if (!success) {
+          return NextResponse.json(
+            {
+              error: "Rate Limit Exceeded",
+              code: "RATE_LIMIT_EXCEEDED",
+              message:
+                "Too many force refreshes. Please try again in a minute.",
+            },
+            { status: 429 },
+          );
+        }
+      } catch (err) {
+        console.error("Failed to check rate limit, failing open:", err);
       }
     }
   }
