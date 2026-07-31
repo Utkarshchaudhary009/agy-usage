@@ -2,45 +2,28 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { getQuotaAllAccounts, getQuota } from "@/lib/quota/service";
 import { createServerClient } from "@/lib/supabase/server";
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
 
-const RATE_LIMIT_WINDOW_MS = 60 * 1000;
-const MAX_REFRESHES_PER_MIN = 10;
-
-async function checkRateLimit(userId: string): Promise<boolean> {
-  const supabase = await createServerClient();
-  const now = new Date();
-  const cutoff = new Date(now.getTime() - RATE_LIMIT_WINDOW_MS);
-
-  // Get current timestamps
-  const { data } = await supabase
-    .from("rate_limits")
-    .select("timestamps")
-    .eq("clerk_user_id", userId)
-    .single();
-
-  let timestamps: Date[] = [];
-  if (data?.timestamps) {
-    timestamps = data.timestamps
-      .map((ts) => new Date(ts))
-      .filter((ts) => ts > cutoff);
-  }
-
-  if (timestamps.length >= MAX_REFRESHES_PER_MIN) {
-    await supabase.from("rate_limits").upsert({
-      clerk_user_id: userId,
-      timestamps: timestamps.map((ts) => ts.toISOString()),
-    });
-    return false;
-  }
-
-  timestamps.push(now);
-
-  await supabase.from("rate_limits").upsert({
-    clerk_user_id: userId,
-    timestamps: timestamps.map((ts) => ts.toISOString()),
+let ratelimit: Ratelimit | undefined;
+if (
+  process.env.UPSTASH_REDIS_REST_URL &&
+  process.env.UPSTASH_REDIS_REST_TOKEN
+) {
+  const redis = new Redis({
+    url: process.env.UPSTASH_REDIS_REST_URL,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN,
   });
 
-  return true;
+  ratelimit = new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(10, "1 m"),
+    analytics: false,
+  });
+} else {
+  console.warn(
+    "Upstash rate limiting is not configured. UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN must be set to enable rate limiting.",
+  );
 }
 
 export async function GET(req: NextRequest) {
@@ -62,15 +45,25 @@ export async function GET(req: NextRequest) {
   const refresh = searchParams.get("refresh") === "true";
 
   if (refresh) {
-    if (!(await checkRateLimit(userId))) {
-      return NextResponse.json(
-        {
-          error: "Rate Limit Exceeded",
-          code: "RATE_LIMIT_EXCEEDED",
-          message: "Too many force refreshes. Please try again in a minute.",
-        },
-        { status: 429 },
-      );
+    if (ratelimit) {
+      try {
+        const { success } = await ratelimit.limit(
+          `ratelimit_quota_refresh_${userId}`,
+        );
+        if (!success) {
+          return NextResponse.json(
+            {
+              error: "Rate Limit Exceeded",
+              code: "RATE_LIMIT_EXCEEDED",
+              message:
+                "Too many force refreshes. Please try again in a minute.",
+            },
+            { status: 429 },
+          );
+        }
+      } catch (err) {
+        console.error("Failed to check rate limit, failing open:", err);
+      }
     }
   }
 
