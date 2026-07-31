@@ -1,32 +1,42 @@
 import { auth } from "@clerk/nextjs/server";
 import Link from "next/link";
+import { Suspense } from "react";
 import { DashboardClient } from "@/components/quota/dashboard-client";
+import { QuotaGridSkeleton } from "@/components/quota/skeletons";
 import { Button } from "@/components/ui/button";
 import { getQuotaAllAccounts } from "@/lib/quota/service";
+
+async function QuotaDashboardLoader({ userId }: { userId: string }) {
+  const snapshots = await getQuotaAllAccounts(userId);
+
+  const latestTimestamp =
+    snapshots.length > 0
+      ? snapshots
+          .map((s) => new Date(s.timestamp).getTime())
+          .sort((a, b) => b - a)[0]
+      : Date.now();
+
+  return (
+    <DashboardClient
+      initialSnapshots={snapshots}
+      initialCachedAt={new Date(latestTimestamp).toISOString()}
+    />
+  );
+}
 
 export default async function Home() {
   const { userId } = await auth();
 
   // If logged in, this becomes the dashboard homepage
   if (userId) {
-    const snapshots = await getQuotaAllAccounts(userId);
-
-    const latestTimestamp =
-      snapshots.length > 0
-        ? snapshots
-            .map((s) => new Date(s.timestamp).getTime())
-            .sort((a, b) => b - a)[0]
-        : Date.now();
-
     return (
       <div className="flex flex-col gap-6">
         <h1 className="text-2xl font-bold tracking-tight">
           Dashboard Overview
         </h1>
-        <DashboardClient
-          initialSnapshots={snapshots}
-          initialCachedAt={new Date(latestTimestamp).toISOString()}
-        />
+        <Suspense fallback={<QuotaGridSkeleton />}>
+          <QuotaDashboardLoader userId={userId} />
+        </Suspense>
       </div>
     );
   }

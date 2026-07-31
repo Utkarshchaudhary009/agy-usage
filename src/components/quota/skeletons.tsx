@@ -1,6 +1,11 @@
 "use client";
 
-import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+} from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export function ModelCardSkeleton() {
@@ -14,7 +19,7 @@ export function ModelCardSkeleton() {
           </div>
         </div>
       </CardHeader>
-      
+
       <CardContent className="pb-3 flex-1 flex flex-col justify-center">
         <div className="flex justify-between items-end mb-2">
           <Skeleton className="h-4 w-16" />
@@ -22,7 +27,7 @@ export function ModelCardSkeleton() {
         </div>
         <Skeleton className="h-3 w-full" />
       </CardContent>
-      
+
       <CardFooter className="pt-0 text-xs flex items-center gap-2">
         <Skeleton className="h-3 w-3" />
         <Skeleton className="h-3 w-24" />
@@ -40,6 +45,7 @@ export function QuotaGridSkeleton() {
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {Array.from({ length: 8 }).map((_, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: Skeleton arrays don't change order
           <ModelCardSkeleton key={i} />
         ))}
       </div>

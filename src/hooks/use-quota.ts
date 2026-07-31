@@ -17,34 +17,28 @@ export function useQuota(): UseQuotaResult {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isValidating, setIsValidating] = useState<boolean>(false);
 
-  const fetchData = useCallback(
-    async (refresh: boolean = false) => {
-      setIsValidating(true);
-      if (!data) setIsLoading(true);
+  const fetchData = useCallback(async (refresh: boolean = false) => {
+    setIsValidating(true);
 
-      try {
-        const url = refresh ? "/api/quota?refresh=true" : "/api/quota";
-        const res = await fetch(url);
-        const json = await res.json();
+    try {
+      const url = refresh ? "/api/quota?refresh=true" : "/api/quota";
+      const res = await fetch(url);
+      const json = await res.json();
 
-        if (!res.ok) {
-          throw new Error(
-            json.message || json.error || "Failed to fetch quota",
-          );
-        }
-
-        setData(json.snapshots);
-        setCachedAt(json.cachedAt);
-        setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err : new Error(String(err)));
-      } finally {
-        setIsLoading(false);
-        setIsValidating(false);
+      if (!res.ok) {
+        throw new Error(json.message || json.error || "Failed to fetch quota");
       }
-    },
-    [data],
-  );
+
+      setData(json.snapshots);
+      setCachedAt(json.cachedAt);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setIsLoading(false);
+      setIsValidating(false);
+    }
+  }, []);
 
   useEffect(() => {
     fetchData();

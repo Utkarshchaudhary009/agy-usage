@@ -1,6 +1,5 @@
 "use client";
 
-import { clsx } from "clsx";
 import { Clock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -12,6 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import type { ModelQuotaInfo } from "@/lib/types/quota";
+import { cn } from "@/lib/utils";
 import { CountdownTimer } from "./countdown-timer";
 
 interface ModelCardProps {
@@ -49,7 +49,7 @@ export function ModelCard({ model, onRefresh }: ModelCardProps) {
         : model.modelProvider || "Model";
 
   return (
-    <Card className={clsx("flex flex-col", model.isExhausted && "opacity-75")}>
+    <Card className={cn("flex flex-col", model.isExhausted && "opacity-75")}>
       <CardHeader className="pb-3 flex flex-row justify-between items-start space-y-0">
         <div className="space-y-1">
           <CardTitle className="text-base font-medium line-clamp-1">
@@ -76,7 +76,7 @@ export function ModelCard({ model, onRefresh }: ModelCardProps) {
       <CardContent className="pb-3 flex-1 flex flex-col justify-center">
         <div className="flex justify-between items-end mb-2">
           <span className="text-sm font-medium">Remaining</span>
-          <span className={clsx("text-2xl font-bold", textColorClass)}>
+          <span className={cn("text-2xl font-bold", textColorClass)}>
             {percentage}%
           </span>
         </div>

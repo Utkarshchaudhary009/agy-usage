@@ -1,11 +1,11 @@
 "use client";
 
-import { clsx } from "clsx";
 import { AlertCircle, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { QuotaSnapshot } from "@/lib/types/quota";
+import { cn } from "@/lib/utils";
 import { AccountHeader } from "./account-header";
 import { CreditsCard } from "./credits-card";
 import { QuotaGrid } from "./quota-grid";
@@ -28,6 +28,17 @@ export function MultiAccountView({
   const [activeTab, setActiveTab] = useState<string>(
     snapshots[0]?.accountId || "",
   );
+  const [formattedTime, setFormattedTime] = useState("");
+
+  useEffect(() => {
+    setFormattedTime(
+      new Date(cachedAt).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }),
+    );
+  }, [cachedAt]);
 
   if (error) {
     return (
@@ -119,13 +130,18 @@ export function MultiAccountView({
       </div>
 
       <div className="w-full">
-        <div className="flex flex-wrap gap-2 mb-4 p-1 bg-muted rounded-lg w-max max-w-full overflow-x-auto">
+        <div
+          role="tablist"
+          className="flex flex-wrap gap-2 mb-4 p-1 bg-muted rounded-lg w-max max-w-full overflow-x-auto"
+        >
           {snapshots.map((snapshot) => (
             <button
+              role="tab"
+              aria-selected={activeTab === snapshot.accountId}
               type="button"
               key={snapshot.accountId}
               onClick={() => setActiveTab(snapshot.accountId)}
-              className={clsx(
+              className={cn(
                 "px-3 py-1.5 text-sm font-medium rounded-md transition-all",
                 activeTab === snapshot.accountId
                   ? "bg-background text-foreground shadow-sm"
@@ -137,9 +153,9 @@ export function MultiAccountView({
           ))}
         </div>
 
-        <div className="space-y-6">
+        <div role="tabpanel" className="space-y-6">
           <div className="text-sm text-muted-foreground">
-            Last updated: {new Date(cachedAt).toLocaleTimeString()}
+            Last updated: {formattedTime}
           </div>
 
           {activeSnapshot.promptCredits && (

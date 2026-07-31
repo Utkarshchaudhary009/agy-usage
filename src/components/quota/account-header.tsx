@@ -1,6 +1,7 @@
 "use client";
 
 import { RefreshCw } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 interface AccountHeaderProps {
@@ -16,11 +17,17 @@ export function AccountHeader({
   onRefresh,
   isRefreshing,
 }: AccountHeaderProps) {
-  const formattedTime = new Date(cachedAt).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
+  const [formattedTime, setFormattedTime] = useState("");
+
+  useEffect(() => {
+    setFormattedTime(
+      new Date(cachedAt).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }),
+    );
+  }, [cachedAt]);
 
   return (
     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 p-4 border rounded-lg bg-card text-card-foreground shadow-sm">

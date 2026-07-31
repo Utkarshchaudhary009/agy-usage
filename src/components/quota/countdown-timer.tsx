@@ -17,6 +17,12 @@ export function CountdownTimer({ resetTime, onReset }: CountdownTimerProps) {
     }
 
     const resetDate = new Date(resetTime).getTime();
+    if (Number.isNaN(resetDate)) {
+      setTimeLeft("Invalid date");
+      return;
+    }
+
+    let interval: NodeJS.Timeout;
 
     const updateTimer = () => {
       const now = Date.now();
@@ -24,6 +30,7 @@ export function CountdownTimer({ resetTime, onReset }: CountdownTimerProps) {
 
       if (distance <= 0) {
         setTimeLeft("Resetting...");
+        if (interval) clearInterval(interval);
         if (onReset) onReset();
         return;
       }
@@ -38,7 +45,7 @@ export function CountdownTimer({ resetTime, onReset }: CountdownTimerProps) {
     };
 
     updateTimer();
-    const interval = setInterval(updateTimer, 1000);
+    interval = setInterval(updateTimer, 1000);
 
     return () => clearInterval(interval);
   }, [resetTime, onReset]);
