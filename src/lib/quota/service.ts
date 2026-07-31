@@ -1,13 +1,13 @@
 import "server-only";
 
-import { createServerClient } from "../supabase/server";
-import { getValidAccessToken } from "../google/token-manager";
-import { resolveProjectId } from "../google/project-resolver";
 import {
-  loadCodeAssist,
   fetchAvailableModels,
+  loadCodeAssist,
 } from "../google/cloudcode-client";
 import { parseQuotaSnapshot } from "../google/parser";
+import { resolveProjectId } from "../google/project-resolver";
+import { getValidAccessToken } from "../google/token-manager";
+import { createServerClient } from "../supabase/server";
 import type { QuotaSnapshot } from "../types/quota";
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes

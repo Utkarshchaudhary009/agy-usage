@@ -1,13 +1,28 @@
 import { auth } from "@clerk/nextjs/server";
 import Link from "next/link";
+import { Suspense } from "react";
+import { DashboardClient } from "@/components/quota/dashboard-client";
+import { QuotaGridSkeleton } from "@/components/quota/skeletons";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { getQuotaAllAccounts } from "@/lib/quota/service";
+
+async function QuotaDashboardLoader({ userId }: { userId: string }) {
+  const snapshots = await getQuotaAllAccounts(userId);
+
+  const latestTimestamp =
+    snapshots.length > 0
+      ? snapshots
+          .map((s) => new Date(s.timestamp).getTime())
+          .sort((a, b) => b - a)[0]
+      : Date.now();
+
+  return (
+    <DashboardClient
+      initialSnapshots={snapshots}
+      initialCachedAt={new Date(latestTimestamp).toISOString()}
+    />
+  );
+}
 
 export default async function Home() {
   const { userId } = await auth();
@@ -15,21 +30,13 @@ export default async function Home() {
   // If logged in, this becomes the dashboard homepage
   if (userId) {
     return (
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-6">
         <h1 className="text-2xl font-bold tracking-tight">
           Dashboard Overview
         </h1>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Quota</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">Pending...</div>
-              <CardDescription>Accounts not yet loaded</CardDescription>
-            </CardContent>
-          </Card>
-        </div>
+        <Suspense fallback={<QuotaGridSkeleton />}>
+          <QuotaDashboardLoader userId={userId} />
+        </Suspense>
       </div>
     );
   }

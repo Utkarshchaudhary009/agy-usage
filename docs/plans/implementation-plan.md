@@ -637,36 +637,36 @@ supabase/migrations/002_quota_cache.sql
 **Feature**: Main dashboard displaying quota for all linked accounts
 
 **Tasks**:
-- [ ] Build quota dashboard page `src/app/(dashboard)/page.tsx`:
+- [x] Build quota dashboard page `src/app/(dashboard)/page.tsx`:
   - Server Component using Clerk `auth()` to get userId
   - Fetches initial quota data server-side
   - Passes to client components for interactivity
-- [ ] Build model quota card `src/components/quota/model-card.tsx`:
+- [x] Build model quota card `src/components/quota/model-card.tsx`:
   - Model name + provider badge (Claude / Gemini)
   - Circular progress gauge or horizontal bar showing remaining %
   - Color coding: green (>=75%), yellow (>=50%), orange (>=25%), red (<25%), gray (exhausted)
   - Reset countdown timer (live updating)
   - "Exhausted" badge when 0%
-- [ ] Build quota grid `src/components/quota/quota-grid.tsx`:
+- [x] Build quota grid `src/components/quota/quota-grid.tsx`:
   - Responsive grid of model cards
   - Filter: All / Claude / Gemini
   - Toggle: Hide/show autocomplete models
-- [ ] Build prompt credits card `src/components/quota/credits-card.tsx`:
+- [x] Build prompt credits card `src/components/quota/credits-card.tsx`:
   - Available / Monthly credits
   - Usage percentage bar
   - Plan type badge
-- [ ] Build account summary header `src/components/quota/account-header.tsx`:
+- [x] Build account summary header `src/components/quota/account-header.tsx`:
   - Account email
   - Last refreshed timestamp
   - "Refresh" button
   - Account switcher (if multiple accounts)
-- [ ] Build multi-account view `src/components/quota/multi-account-view.tsx`:
+- [x] Build multi-account view `src/components/quota/multi-account-view.tsx`:
   - Tabs or accordion for each account
   - "Refresh All" button
   - Side-by-side comparison mode
-- [ ] Add loading skeletons for all components
-- [ ] Add error states (account needs re-auth, API error, no accounts linked)
-- [ ] Add SWR or React Query for data fetching with auto-revalidation (5 min)
+- [x] Add loading skeletons for all components
+- [x] Add error states (account needs re-auth, API error, no accounts linked)
+- [x] Add SWR or React Query for data fetching with auto-revalidation (5 min)
 
 **Deliverable**: Beautiful, responsive quota dashboard showing all models across all accounts with live countdown timers.
 
