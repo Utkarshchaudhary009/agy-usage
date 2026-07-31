@@ -1,9 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { getQuotaAllAccounts, getQuota } from "@/lib/quota/service";
-import { createServerClient } from "@/lib/supabase/server";
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
+import { type NextRequest, NextResponse } from "next/server";
+import { getQuota, getQuotaAllAccounts } from "@/lib/quota/service";
+import { createServerClient } from "@/lib/supabase/server";
 
 let ratelimit: Ratelimit | undefined;
 if (
