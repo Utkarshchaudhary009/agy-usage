@@ -1,7 +1,9 @@
 import { cache } from "react";
 import "server-only";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
+import type { Database } from "@/lib/types/database";
 import type { GoogleTokenResponse } from "@/lib/types/google";
 import { GOOGLE_OAUTH } from "./oauth-config";
 
@@ -15,70 +17,18 @@ export class TokenRefreshError extends Error {
   }
 }
 
+type TokenClient = SupabaseClient<Database>;
+
 /**
- * Gets a valid access token for the given account.
- * If the current token is expired, it will automatically refresh it and update the database.
- *
- * @param accountId - The ID of the Google account
- * @param options - Set asBackgroundJob to true when calling from Inngest to bypass RLS
+ * Exchanges the refresh token for a new access token via Google, persists the
+ * new tokens to the Vault, and updates the account's token status.
+ * Throws TokenRefreshError for permanent failures (revoked/invalid grants).
  */
-export const getValidAccessToken = cache(async function getValidAccessToken(
+async function performTokenRefresh(
+  supabase: TokenClient,
   accountId: string,
-  options?: { asBackgroundJob?: boolean },
+  refreshToken: string,
 ): Promise<string> {
-  const supabase = options?.asBackgroundJob
-    ? createServiceClient()
-    : await createServerClient();
-
-  const { data: accountData } = await supabase
-    .from("google_accounts")
-    .select("token_status")
-    .eq("id", accountId)
-    .single();
-
-  if (accountData?.token_status === "revoked") {
-    throw new TokenRefreshError("Refresh token has been revoked or is invalid");
-  }
-
-  // 1. Get token metadata and access token securely in one round-trip
-  const { data: tokenMeta, error: metaError } = await supabase.rpc(
-    "get_valid_token_metadata",
-    { p_account_id: accountId },
-  );
-
-  if (metaError || !tokenMeta) {
-    throw new Error(
-      `Tokens not found for this account or decryption failed: ${metaError?.message || "No data"}`,
-    );
-  }
-
-  const { access_token, expires_at } = tokenMeta as {
-    access_token: string;
-    expires_at: string;
-  };
-
-  if (!expires_at) {
-    throw new Error("Tokens not found for this account");
-  }
-
-  const expiresAt = new Date(expires_at).getTime();
-  const isExpired = Date.now() >= expiresAt - EXPIRY_BUFFER_MS;
-
-  if (!isExpired && access_token) {
-    // 2a. Still valid, return decrypted access token
-    return access_token;
-  }
-
-  // 2b. Expired, we need to refresh
-  const { data: refreshToken, error: refreshRpcError } = await supabase.rpc(
-    "get_decrypted_refresh_token",
-    { p_account_id: accountId },
-  );
-
-  if (refreshRpcError || !refreshToken) {
-    throw new Error("No refresh token available to renew access token");
-  }
-
   // Refresh via Google API with retry logic
   let tokenResponse: Response | null = null;
   const MAX_RETRIES = 2; // initial attempt + 1 retry
@@ -190,7 +140,101 @@ export const getValidAccessToken = cache(async function getValidAccessToken(
     .eq("id", accountId);
 
   return data.access_token;
+}
+
+/**
+ * Gets a valid access token for the given account.
+ * If the current token is expired, it will automatically refresh it and update the database.
+ *
+ * Note: results are memoized per request via React cache(). Do not call this
+ * after forceRefreshToken() for the same account within one request — the
+ * memoized (pre-refresh) token would be returned.
+ *
+ * @param accountId - The ID of the Google account
+ * @param options - Set asBackgroundJob to true when calling from Inngest to bypass RLS
+ */
+export const getValidAccessToken = cache(async function getValidAccessToken(
+  accountId: string,
+  options?: { asBackgroundJob?: boolean },
+): Promise<string> {
+  const supabase = options?.asBackgroundJob
+    ? createServiceClient()
+    : await createServerClient();
+
+  const { data: accountData } = await supabase
+    .from("google_accounts")
+    .select("token_status")
+    .eq("id", accountId)
+    .single();
+
+  if (accountData?.token_status === "revoked") {
+    throw new TokenRefreshError("Refresh token has been revoked or is invalid");
+  }
+
+  // 1. Get token metadata and access token securely in one round-trip
+  const { data: tokenMeta, error: metaError } = await supabase.rpc(
+    "get_valid_token_metadata",
+    { p_account_id: accountId },
+  );
+
+  if (metaError || !tokenMeta) {
+    throw new Error(
+      `Tokens not found for this account or decryption failed: ${metaError?.message || "No data"}`,
+    );
+  }
+
+  const { access_token, expires_at } = tokenMeta as {
+    access_token: string;
+    expires_at: string;
+  };
+
+  if (!expires_at) {
+    throw new Error("Tokens not found for this account");
+  }
+
+  const expiresAt = new Date(expires_at).getTime();
+  const isExpired = Date.now() >= expiresAt - EXPIRY_BUFFER_MS;
+
+  if (!isExpired && access_token) {
+    // 2a. Still valid, return decrypted access token
+    return access_token;
+  }
+
+  // 2b. Expired, we need to refresh
+  const { data: refreshToken, error: refreshRpcError } = await supabase.rpc(
+    "get_decrypted_refresh_token",
+    { p_account_id: accountId },
+  );
+
+  if (refreshRpcError || !refreshToken) {
+    throw new Error("No refresh token available to renew access token");
+  }
+
+  return performTokenRefresh(supabase, accountId, refreshToken);
 });
+
+/**
+ * Forces an immediate token refresh against Google, regardless of expiry.
+ * Updates the stored tokens and resets the account's token status to active
+ * (or revoked if Google rejects the refresh token). Not cached: every call
+ * hits the token endpoint.
+ *
+ * @param accountId - The ID of the Google account
+ */
+export async function forceRefreshToken(accountId: string): Promise<string> {
+  const supabase = await createServerClient();
+
+  const { data: refreshToken, error: refreshRpcError } = await supabase.rpc(
+    "get_decrypted_refresh_token",
+    { p_account_id: accountId },
+  );
+
+  if (refreshRpcError || !refreshToken) {
+    throw new Error("No refresh token available to renew access token");
+  }
+
+  return performTokenRefresh(supabase, accountId, refreshToken);
+}
 
 /**
  * Checks if an account's token is currently valid without refreshing it.

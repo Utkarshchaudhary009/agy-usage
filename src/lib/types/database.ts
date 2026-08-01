@@ -142,6 +142,18 @@ export interface Database {
           expires_at: string;
         } | null;
       };
+      delete_account_with_tokens: {
+        Args: {
+          p_account_id: string;
+        };
+        Returns: undefined;
+      };
+      set_active_account: {
+        Args: {
+          p_account_id: string;
+        };
+        Returns: undefined;
+      };
     };
     Enums: {
       [_ in never]: never;
