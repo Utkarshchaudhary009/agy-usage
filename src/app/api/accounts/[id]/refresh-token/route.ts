@@ -56,7 +56,7 @@ export async function POST(_req: NextRequest, { params }: RouteContext) {
             code: "RATE_LIMIT_EXCEEDED",
             message: "Too many token refreshes. Please try again in a minute.",
           },
-          { status: 429 },
+          { status: 429, headers: { "Retry-After": "60" } },
         );
       }
     } catch (err) {
@@ -67,12 +67,25 @@ export async function POST(_req: NextRequest, { params }: RouteContext) {
   const { id } = await params;
 
   const supabase = await createServerClient();
-  const { data: account } = await supabase
+  const { data: account, error: lookupError } = await supabase
     .from("google_accounts")
     .select("id")
     .eq("id", id)
     .eq("clerk_user_id", userId)
     .single();
+
+  // PGRST116 = no rows matched after RLS filtering: a genuine not-found.
+  if (lookupError && lookupError.code !== "PGRST116") {
+    console.error("Failed to look up account:", lookupError);
+    return NextResponse.json(
+      {
+        error: "Internal Server Error",
+        code: "INTERNAL_ERROR",
+        message: "Failed to refresh token",
+      },
+      { status: 500 },
+    );
+  }
 
   if (!account) {
     return NextResponse.json(

@@ -72,7 +72,7 @@ async function AccountsLoader({
 }) {
   const supabase = await createServerClient();
 
-  const { data: rows } = await supabase
+  const { data: rows, error: rowsError } = await supabase
     .from("google_accounts")
     .select(
       "id, email, display_name, is_active, token_status, added_at, last_used_at",
@@ -80,10 +80,22 @@ async function AccountsLoader({
     .eq("clerk_user_id", userId)
     .order("added_at", { ascending: true });
 
+  if (rowsError) {
+    console.error("Failed to load accounts:", rowsError);
+    return (
+      <AccountList
+        accounts={[]}
+        errorMessage="Could not load your accounts. Please try again."
+        successMessage={null}
+        loadFailed
+      />
+    );
+  }
+
   const accounts = rows ?? [];
 
   // Fetch cached quota snapshots in a single query (RLS scopes to this user).
-  const { data: cacheRows } = accounts.length
+  const { data: cacheRows, error: cacheError } = accounts.length
     ? await supabase
         .from("quota_cache")
         .select("account_id, snapshot")
@@ -91,13 +103,24 @@ async function AccountsLoader({
           "account_id",
           accounts.map((a) => a.id),
         )
-    : { data: null };
+    : { data: null, error: null };
+
+  if (cacheError) {
+    // Quota display is supplementary; log and continue with no snapshots.
+    console.error("Failed to load quota snapshots:", cacheError);
+  }
 
   const snapshotByAccount = new Map<string, QuotaSnapshot>();
   for (const row of cacheRows ?? []) {
-    const snapshot = row.snapshot as unknown as QuotaSnapshot;
+    const snapshot = row.snapshot as unknown as QuotaSnapshot | null;
     // Guard against stale/malformed cached shapes crashing the client.
-    if (!Array.isArray(snapshot.models)) continue;
+    if (
+      !snapshot ||
+      typeof snapshot !== "object" ||
+      !Array.isArray(snapshot.models)
+    ) {
+      continue;
+    }
     snapshotByAccount.set(row.account_id, snapshot);
   }
 

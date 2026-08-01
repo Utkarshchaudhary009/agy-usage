@@ -7,7 +7,7 @@ import { toast } from "sonner";
 export type AccountActionType = "setActive" | "remove" | "refreshToken";
 
 interface UseAccountActionsResult {
-  pending: { type: AccountActionType; accountId: string } | null;
+  pending: Record<string, AccountActionType>;
   setActive: (accountId: string, email: string) => Promise<void>;
   remove: (accountId: string, email: string) => Promise<void>;
   refreshToken: (accountId: string, email: string) => Promise<void>;
@@ -15,10 +15,7 @@ interface UseAccountActionsResult {
 
 export function useAccountActions(): UseAccountActionsResult {
   const router = useRouter();
-  const [pending, setPending] = useState<{
-    type: AccountActionType;
-    accountId: string;
-  } | null>(null);
+  const [pending, setPending] = useState<Record<string, AccountActionType>>({});
 
   const run = useCallback(
     async (
@@ -28,7 +25,7 @@ export function useAccountActions(): UseAccountActionsResult {
       options: RequestInit,
       successMessage: string,
     ) => {
-      setPending({ type, accountId });
+      setPending((prev) => ({ ...prev, [accountId]: type }));
       try {
         const res = await fetch(url, {
           ...options,
@@ -49,11 +46,27 @@ export function useAccountActions(): UseAccountActionsResult {
         toast.success(successMessage);
         router.refresh();
       } catch (err) {
-        toast.error(
-          err instanceof Error ? err.message : "Unexpected error occurred",
-        );
+        if (
+          err instanceof Error &&
+          (err.name === "AbortError" || err.name === "TimeoutError")
+        ) {
+          // The server may still be completing the operation (e.g. an
+          // outbound Google call); refresh so the UI picks up the result.
+          toast.info("Request is taking longer than expected. Refreshing...");
+          router.refresh();
+        } else {
+          toast.error(
+            err instanceof Error ? err.message : "Unexpected error occurred",
+          );
+        }
       } finally {
-        setPending(null);
+        setPending((prev) => {
+          // Never clear a newer pending action for this account.
+          if (prev[accountId] !== type) return prev;
+          const next = { ...prev };
+          delete next[accountId];
+          return next;
+        });
       }
     },
     [router],

@@ -65,7 +65,10 @@ export async function PATCH(_req: NextRequest, { params }: RouteContext) {
     userId,
     id,
   );
-  if (lookupError) return internalError("update", lookupError);
+  // PGRST116 = no rows matched after RLS filtering: a genuine not-found.
+  if (lookupError && lookupError.code !== "PGRST116") {
+    return internalError("update", lookupError);
+  }
   if (!account) return notFound();
 
   // Single atomic RPC: activates this account and deactivates the rest.
@@ -90,7 +93,10 @@ export async function DELETE(_req: NextRequest, { params }: RouteContext) {
     userId,
     id,
   );
-  if (lookupError) return internalError("remove", lookupError);
+  // PGRST116 = no rows matched after RLS filtering: a genuine not-found.
+  if (lookupError && lookupError.code !== "PGRST116") {
+    return internalError("remove", lookupError);
+  }
   if (!account) return notFound();
 
   // Permanently removes the account, its tokens, vault secrets, and quota cache.

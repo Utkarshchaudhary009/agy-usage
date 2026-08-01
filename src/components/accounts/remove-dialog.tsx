@@ -45,15 +45,16 @@ export function RemoveDialog({
                 Cancel
               </Button>
             </AlertDialog.Cancel>
-            <AlertDialog.Action asChild>
-              <Button
-                variant="destructive"
-                onClick={onConfirm}
-                disabled={isPending}
-              >
-                {isPending ? "Removing..." : "Remove"}
-              </Button>
-            </AlertDialog.Action>
+            {/* Plain button instead of AlertDialog.Action so the dialog does
+                not auto-close: it stays open (busy state) until the remove
+                request settles. */}
+            <Button
+              variant="destructive"
+              onClick={onConfirm}
+              disabled={isPending}
+            >
+              {isPending ? "Removing..." : "Remove"}
+            </Button>
           </div>
         </AlertDialog.Content>
       </AlertDialog.Portal>

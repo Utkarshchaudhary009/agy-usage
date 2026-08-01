@@ -10,12 +10,14 @@ interface AccountListProps {
   accounts: LinkedAccount[];
   errorMessage?: string | null;
   successMessage?: string | null;
+  loadFailed?: boolean;
 }
 
 export function AccountList({
   accounts,
   errorMessage,
   successMessage,
+  loadFailed = false,
 }: AccountListProps) {
   const { pending, setActive, remove, refreshToken } = useAccountActions();
 
@@ -53,7 +55,15 @@ export function AccountList({
         </div>
       )}
 
-      {accounts.length === 0 ? (
+      {loadFailed ? (
+        <div className="flex flex-col items-center justify-center rounded-lg border bg-card p-8 text-center min-h-[400px]">
+          <h2 className="mb-2 text-2xl font-semibold">Something went wrong</h2>
+          <p className="mb-6 max-w-md text-muted-foreground">
+            We could not load your linked accounts. Please try again in a
+            moment.
+          </p>
+        </div>
+      ) : accounts.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-lg border bg-card p-8 text-center min-h-[400px]">
           <h2 className="mb-2 text-2xl font-semibold">No Accounts Linked</h2>
           <p className="mb-6 max-w-md text-muted-foreground">
