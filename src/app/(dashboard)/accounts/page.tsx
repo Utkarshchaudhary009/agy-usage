@@ -5,7 +5,7 @@ import { AccountList } from "@/components/accounts/account-list";
 import { Skeleton } from "@/components/ui/skeleton";
 import { createServerClient } from "@/lib/supabase/server";
 import type { LinkedAccount } from "@/lib/types/account";
-import type { QuotaSnapshot } from "@/lib/types/quota";
+import type { ModelQuotaInfo, QuotaSnapshot } from "@/lib/types/quota";
 
 const ERROR_MESSAGES: Record<string, string> = {
   missing_parameters:
@@ -31,6 +31,33 @@ const ERROR_MESSAGES: Record<string, string> = {
 };
 
 const SKELETON_KEYS = [0, 1, 2];
+
+function isModelQuotaInfo(value: unknown): value is ModelQuotaInfo {
+  if (typeof value !== "object" || value === null) return false;
+  const model = value as Partial<ModelQuotaInfo>;
+  return (
+    typeof model.modelId === "string" &&
+    typeof model.label === "string" &&
+    typeof model.displayName === "string" &&
+    typeof model.remainingPercentage === "number" &&
+    typeof model.isExhausted === "boolean"
+  );
+}
+
+// Guards against stale/malformed cached JSON (it is written by an older app
+// version or a partially written row) crashing the client-side rendering.
+function isQuotaSnapshot(value: unknown): value is QuotaSnapshot {
+  if (typeof value !== "object" || value === null) return false;
+  const snapshot = value as Partial<QuotaSnapshot>;
+  return (
+    typeof snapshot.timestamp === "string" &&
+    snapshot.method === "google" &&
+    typeof snapshot.email === "string" &&
+    typeof snapshot.accountId === "string" &&
+    Array.isArray(snapshot.models) &&
+    snapshot.models.every(isModelQuotaInfo)
+  );
+}
 
 function AccountsSkeleton() {
   return (
@@ -112,13 +139,10 @@ async function AccountsLoader({
 
   const snapshotByAccount = new Map<string, QuotaSnapshot>();
   for (const row of cacheRows ?? []) {
-    const snapshot = row.snapshot as unknown as QuotaSnapshot | null;
-    // Guard against stale/malformed cached shapes crashing the client.
-    if (
-      !snapshot ||
-      typeof snapshot !== "object" ||
-      !Array.isArray(snapshot.models)
-    ) {
+    const snapshot = row.snapshot as unknown;
+    // Reject malformed shapes and snapshots whose accountId doesn't match the
+    // row they are keyed by before the client ever sees them.
+    if (!isQuotaSnapshot(snapshot) || snapshot.accountId !== row.account_id) {
       continue;
     }
     snapshotByAccount.set(row.account_id, snapshot);

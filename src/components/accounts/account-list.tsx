@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertCircle, CheckCircle2, Plus } from "lucide-react";
+import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { useAccountActions } from "@/hooks/use-account-actions";
 import type { LinkedAccount } from "@/lib/types/account";
@@ -19,21 +20,28 @@ export function AccountList({
   successMessage,
   loadFailed = false,
 }: AccountListProps) {
-  const { pending, setActive, remove, refreshToken } = useAccountActions();
+  const accountIds = useMemo(() => accounts.map((a) => a.id), [accounts]);
+  const { pending, setActive, remove, refreshToken } =
+    useAccountActions(accountIds);
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <p className="text-sm text-muted-foreground">
-          {accounts.length} linked account{accounts.length === 1 ? "" : "s"}
-        </p>
-        <Button asChild>
-          <a href="/api/auth/google/link">
-            <Plus />
-            Link New Account
-          </a>
-        </Button>
-      </div>
+      {/* During a load failure the count would be misleadingly zero, so the
+          header (count + link button) is hidden entirely. */}
+      {!loadFailed && (
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <p className="text-sm text-muted-foreground">
+            {accounts.length} linked account
+            {accounts.length === 1 ? "" : "s"}
+          </p>
+          <Button asChild>
+            <a href="/api/auth/google/link">
+              <Plus />
+              Link New Account
+            </a>
+          </Button>
+        </div>
+      )}
 
       {errorMessage && (
         <div

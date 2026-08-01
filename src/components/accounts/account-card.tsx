@@ -18,13 +18,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { AccountActionType } from "@/hooks/use-account-actions";
+import type { PendingAction } from "@/hooks/use-account-actions";
 import type { LinkedAccount } from "@/lib/types/account";
 import { RemoveDialog } from "./remove-dialog";
 
 interface AccountCardProps {
   account: LinkedAccount;
-  pending: Record<string, AccountActionType>;
+  pending: Record<string, PendingAction>;
   onSetActive: (accountId: string, email: string) => void;
   onRefreshToken: (accountId: string, email: string) => void;
   onRemove: (accountId: string, email: string) => Promise<void>;
@@ -69,9 +69,9 @@ export function AccountCard({
     setLastUsedDate(format(account.lastUsedAt));
   }, [account.addedAt, account.lastUsedAt]);
 
-  const pendingType = pending[account.id];
+  const pendingType = pending[account.id]?.type;
   // Any in-flight mutation for this account blocks all of its actions,
-  // including Set Active / Refresh Token while a remove is pending.
+  // including Set Active / Refresh Token / Remove while one is pending.
   const isBusy = pendingType !== undefined;
 
   const exhaustedCount = account.quota
@@ -185,7 +185,7 @@ export function AccountCard({
             variant="outline"
             className="text-destructive hover:text-destructive"
             onClick={() => setRemoveOpen(true)}
-            disabled={pendingType === "remove"}
+            disabled={isBusy}
           >
             <Trash2 />
             Remove

@@ -20,11 +20,22 @@ export function RemoveDialog({
   isPending,
 }: RemoveDialogProps) {
   return (
-    <AlertDialog.Root open={isOpen} onOpenChange={onOpenChange}>
+    <AlertDialog.Root
+      open={isOpen}
+      onOpenChange={(open) => {
+        // Keep the dialog open while removal is pending so the busy state
+        // stays visible; only allow closing once the request settles.
+        if (!open && isPending) return;
+        onOpenChange(open);
+      }}
+    >
       <AlertDialog.Portal>
         <AlertDialog.Overlay className="fixed inset-0 z-50 bg-black/10 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 supports-backdrop-filter:backdrop-blur-xs" />
         <AlertDialog.Content
           data-slot="alert-dialog-content"
+          onEscapeKeyDown={(event) => {
+            if (isPending) event.preventDefault();
+          }}
           className={cn(
             "fixed top-1/2 left-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-6 text-popover-foreground shadow-lg",
             "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
