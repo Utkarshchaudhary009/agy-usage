@@ -3,6 +3,14 @@ import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 import { type NextRequest, NextResponse } from "next/server";
 import {
+  accountNotFound,
+  errorJson,
+  getOwnedAccountId,
+  internalError,
+  isRowNotFound,
+  unauthorized,
+} from "@/lib/api/accounts";
+import {
   forceRefreshToken,
   TokenRefreshError,
 } from "@/lib/google/token-manager";
@@ -34,14 +42,7 @@ if (
 export async function POST(_req: NextRequest, { params }: RouteContext) {
   const { userId } = await auth();
   if (!userId) {
-    return NextResponse.json(
-      {
-        error: "Unauthorized",
-        code: "UNAUTHORIZED",
-        message: "You must be logged in to manage accounts.",
-      },
-      { status: 401 },
-    );
+    return unauthorized();
   }
 
   if (ratelimit) {
@@ -50,13 +51,14 @@ export async function POST(_req: NextRequest, { params }: RouteContext) {
         `ratelimit_token_refresh_${userId}`,
       );
       if (!success) {
-        return NextResponse.json(
+        return errorJson(
           {
             error: "Rate Limit Exceeded",
             code: "RATE_LIMIT_EXCEEDED",
             message: "Too many token refreshes. Please try again in a minute.",
           },
-          { status: 429 },
+          429,
+          { "Retry-After": "60" },
         );
       }
     } catch (err) {
@@ -67,22 +69,18 @@ export async function POST(_req: NextRequest, { params }: RouteContext) {
   const { id } = await params;
 
   const supabase = await createServerClient();
-  const { data: account } = await supabase
-    .from("google_accounts")
-    .select("id")
-    .eq("id", id)
-    .eq("clerk_user_id", userId)
-    .single();
+  const { data: account, error: lookupError } = await getOwnedAccountId(
+    supabase,
+    userId,
+    id,
+  );
+  // PGRST116 = no rows matched after RLS filtering: a genuine not-found.
+  if (lookupError && !isRowNotFound(lookupError)) {
+    return internalError("refresh token", lookupError);
+  }
 
   if (!account) {
-    return NextResponse.json(
-      {
-        error: "Not Found",
-        code: "ACCOUNT_NOT_FOUND",
-        message: "Account not found or you don't have permission to access it.",
-      },
-      { status: 404 },
-    );
+    return accountNotFound();
   }
 
   try {
@@ -91,26 +89,18 @@ export async function POST(_req: NextRequest, { params }: RouteContext) {
     if (err instanceof TokenRefreshError) {
       // Log the detail server-side, but keep the client response generic.
       console.error("Token refresh rejected by Google:", err.message);
-      return NextResponse.json(
+      return errorJson(
         {
           error: "Token Refresh Failed",
           code: "TOKEN_REFRESH_FAILED",
           message:
             "Token refresh was rejected by Google. Please re-authenticate this account.",
         },
-        { status: 400 },
+        400,
       );
     }
 
-    console.error("Failed to refresh token:", err);
-    return NextResponse.json(
-      {
-        error: "Internal Server Error",
-        code: "INTERNAL_ERROR",
-        message: "Failed to refresh token",
-      },
-      { status: 500 },
-    );
+    return internalError("refresh token", err);
   }
 
   return NextResponse.json({ success: true });

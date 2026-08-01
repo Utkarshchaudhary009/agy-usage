@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertCircle, CheckCircle2, Plus } from "lucide-react";
+import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { useAccountActions } from "@/hooks/use-account-actions";
 import type { LinkedAccount } from "@/lib/types/account";
@@ -10,28 +11,37 @@ interface AccountListProps {
   accounts: LinkedAccount[];
   errorMessage?: string | null;
   successMessage?: string | null;
+  loadFailed?: boolean;
 }
 
 export function AccountList({
   accounts,
   errorMessage,
   successMessage,
+  loadFailed = false,
 }: AccountListProps) {
-  const { pending, setActive, remove, refreshToken } = useAccountActions();
+  const accountIds = useMemo(() => accounts.map((a) => a.id), [accounts]);
+  const { pending, setActive, remove, refreshToken } =
+    useAccountActions(accountIds);
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <p className="text-sm text-muted-foreground">
-          {accounts.length} linked account{accounts.length === 1 ? "" : "s"}
-        </p>
-        <Button asChild>
-          <a href="/api/auth/google/link">
-            <Plus />
-            Link New Account
-          </a>
-        </Button>
-      </div>
+      {/* During a load failure the count would be misleadingly zero, so the
+          header (count + link button) is hidden entirely. */}
+      {!loadFailed && (
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <p className="text-sm text-muted-foreground">
+            {accounts.length} linked account
+            {accounts.length === 1 ? "" : "s"}
+          </p>
+          <Button asChild>
+            <a href="/api/auth/google/link">
+              <Plus />
+              Link New Account
+            </a>
+          </Button>
+        </div>
+      )}
 
       {errorMessage && (
         <div
@@ -53,7 +63,15 @@ export function AccountList({
         </div>
       )}
 
-      {accounts.length === 0 ? (
+      {loadFailed ? (
+        <div className="flex flex-col items-center justify-center rounded-lg border bg-card p-8 text-center min-h-[400px]">
+          <h2 className="mb-2 text-2xl font-semibold">Something went wrong</h2>
+          <p className="mb-6 max-w-md text-muted-foreground">
+            We could not load your linked accounts. Please try again in a
+            moment.
+          </p>
+        </div>
+      ) : accounts.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-lg border bg-card p-8 text-center min-h-[400px]">
           <h2 className="mb-2 text-2xl font-semibold">No Accounts Linked</h2>
           <p className="mb-6 max-w-md text-muted-foreground">

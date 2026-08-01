@@ -18,16 +18,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { AccountActionType } from "@/hooks/use-account-actions";
+import type { PendingAction } from "@/hooks/use-account-actions";
 import type { LinkedAccount } from "@/lib/types/account";
 import { RemoveDialog } from "./remove-dialog";
 
 interface AccountCardProps {
   account: LinkedAccount;
-  pending: { type: AccountActionType; accountId: string } | null;
+  pending: Record<string, PendingAction>;
   onSetActive: (accountId: string, email: string) => void;
   onRefreshToken: (accountId: string, email: string) => void;
-  onRemove: (accountId: string, email: string) => void;
+  onRemove: (accountId: string, email: string) => Promise<void>;
 }
 
 const TOKEN_STATUS_LABELS: Record<LinkedAccount["tokenStatus"], string> = {
@@ -69,9 +69,10 @@ export function AccountCard({
     setLastUsedDate(format(account.lastUsedAt));
   }, [account.addedAt, account.lastUsedAt]);
 
-  const isBusy =
-    pending?.accountId === account.id &&
-    (pending.type === "setActive" || pending.type === "refreshToken");
+  const pendingType = pending[account.id]?.type;
+  // Any in-flight mutation for this account blocks all of its actions,
+  // including Set Active / Refresh Token / Remove while one is pending.
+  const isBusy = pendingType !== undefined;
 
   const exhaustedCount = account.quota
     ? account.quota.models.filter((m) => m.isExhausted).length
@@ -148,9 +149,7 @@ export function AccountCard({
               disabled={isBusy}
             >
               <UserCheck />
-              {pending?.type === "setActive" && pending.accountId === account.id
-                ? "Setting..."
-                : "Set as Active"}
+              {pendingType === "setActive" ? "Setting..." : "Set as Active"}
             </Button>
           )}
 
@@ -172,14 +171,10 @@ export function AccountCard({
             >
               <RefreshCw
                 className={
-                  pending?.type === "refreshToken" &&
-                  pending.accountId === account.id
-                    ? "animate-spin"
-                    : undefined
+                  pendingType === "refreshToken" ? "animate-spin" : undefined
                 }
               />
-              {pending?.type === "refreshToken" &&
-              pending.accountId === account.id
+              {pendingType === "refreshToken"
                 ? "Refreshing..."
                 : "Refresh Token"}
             </Button>
@@ -190,9 +185,7 @@ export function AccountCard({
             variant="outline"
             className="text-destructive hover:text-destructive"
             onClick={() => setRemoveOpen(true)}
-            disabled={
-              pending?.type === "remove" && pending.accountId === account.id
-            }
+            disabled={isBusy}
           >
             <Trash2 />
             Remove
@@ -204,12 +197,12 @@ export function AccountCard({
         email={account.email}
         isOpen={removeOpen}
         onOpenChange={setRemoveOpen}
-        isPending={
-          pending?.type === "remove" && pending.accountId === account.id
-        }
-        onConfirm={() => {
+        isPending={pendingType === "remove"}
+        onConfirm={async () => {
+          // Keep the dialog open (with a busy confirm button) until the
+          // request settles, so the pending state is actually visible.
+          await onRemove(account.id, account.email);
           setRemoveOpen(false);
-          onRemove(account.id, account.email);
         }}
       />
     </Card>

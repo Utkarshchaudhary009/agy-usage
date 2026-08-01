@@ -5,7 +5,7 @@ import { AccountList } from "@/components/accounts/account-list";
 import { Skeleton } from "@/components/ui/skeleton";
 import { createServerClient } from "@/lib/supabase/server";
 import type { LinkedAccount } from "@/lib/types/account";
-import type { QuotaSnapshot } from "@/lib/types/quota";
+import type { ModelQuotaInfo, QuotaSnapshot } from "@/lib/types/quota";
 
 const ERROR_MESSAGES: Record<string, string> = {
   missing_parameters:
@@ -31,6 +31,33 @@ const ERROR_MESSAGES: Record<string, string> = {
 };
 
 const SKELETON_KEYS = [0, 1, 2];
+
+function isModelQuotaInfo(value: unknown): value is ModelQuotaInfo {
+  if (typeof value !== "object" || value === null) return false;
+  const model = value as Partial<ModelQuotaInfo>;
+  return (
+    typeof model.modelId === "string" &&
+    typeof model.label === "string" &&
+    typeof model.displayName === "string" &&
+    typeof model.remainingPercentage === "number" &&
+    typeof model.isExhausted === "boolean"
+  );
+}
+
+// Guards against stale/malformed cached JSON (it is written by an older app
+// version or a partially written row) crashing the client-side rendering.
+function isQuotaSnapshot(value: unknown): value is QuotaSnapshot {
+  if (typeof value !== "object" || value === null) return false;
+  const snapshot = value as Partial<QuotaSnapshot>;
+  return (
+    typeof snapshot.timestamp === "string" &&
+    snapshot.method === "google" &&
+    typeof snapshot.email === "string" &&
+    typeof snapshot.accountId === "string" &&
+    Array.isArray(snapshot.models) &&
+    snapshot.models.every(isModelQuotaInfo)
+  );
+}
 
 function AccountsSkeleton() {
   return (
@@ -72,7 +99,7 @@ async function AccountsLoader({
 }) {
   const supabase = await createServerClient();
 
-  const { data: rows } = await supabase
+  const { data: rows, error: rowsError } = await supabase
     .from("google_accounts")
     .select(
       "id, email, display_name, is_active, token_status, added_at, last_used_at",
@@ -80,10 +107,22 @@ async function AccountsLoader({
     .eq("clerk_user_id", userId)
     .order("added_at", { ascending: true });
 
+  if (rowsError) {
+    console.error("Failed to load accounts:", rowsError);
+    return (
+      <AccountList
+        accounts={[]}
+        errorMessage={null}
+        successMessage={null}
+        loadFailed
+      />
+    );
+  }
+
   const accounts = rows ?? [];
 
   // Fetch cached quota snapshots in a single query (RLS scopes to this user).
-  const { data: cacheRows } = accounts.length
+  const { data: cacheRows, error: cacheError } = accounts.length
     ? await supabase
         .from("quota_cache")
         .select("account_id, snapshot")
@@ -91,13 +130,21 @@ async function AccountsLoader({
           "account_id",
           accounts.map((a) => a.id),
         )
-    : { data: null };
+    : { data: null, error: null };
+
+  if (cacheError) {
+    // Quota display is supplementary; log and continue with no snapshots.
+    console.error("Failed to load quota snapshots:", cacheError);
+  }
 
   const snapshotByAccount = new Map<string, QuotaSnapshot>();
   for (const row of cacheRows ?? []) {
-    const snapshot = row.snapshot as unknown as QuotaSnapshot;
-    // Guard against stale/malformed cached shapes crashing the client.
-    if (!Array.isArray(snapshot.models)) continue;
+    const snapshot = row.snapshot as unknown;
+    // Reject malformed shapes and snapshots whose accountId doesn't match the
+    // row they are keyed by before the client ever sees them.
+    if (!isQuotaSnapshot(snapshot) || snapshot.accountId !== row.account_id) {
+      continue;
+    }
     snapshotByAccount.set(row.account_id, snapshot);
   }
 
