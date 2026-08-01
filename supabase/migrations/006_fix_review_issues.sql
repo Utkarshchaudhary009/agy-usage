@@ -227,6 +227,10 @@ BEGIN
   SET LOCAL lock_timeout = '10s';
   PERFORM pg_advisory_xact_lock(hashtextextended(v_owner, 0));
 
+  IF NOT EXISTS (SELECT 1 FROM public.google_accounts WHERE id = p_account_id) THEN
+    RAISE EXCEPTION 'Not found';
+  END IF;
+
   SELECT access_token_secret_id, refresh_token_secret_id
     INTO v_access_secret_id, v_refresh_secret_id
   FROM public.google_tokens
@@ -282,6 +286,10 @@ BEGIN
 
   SET LOCAL lock_timeout = '10s';
   PERFORM pg_advisory_xact_lock(hashtextextended(v_owner, 0));
+
+  IF NOT EXISTS (SELECT 1 FROM public.google_accounts WHERE id = p_account_id) THEN
+    RAISE EXCEPTION 'Not found';
+  END IF;
 
   UPDATE public.google_accounts
     SET is_active = false
