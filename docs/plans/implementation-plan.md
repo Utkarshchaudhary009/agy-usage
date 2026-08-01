@@ -689,23 +689,23 @@ src/hooks/use-quota.ts
 **Feature**: Full account management page (list, add, switch, remove accounts)
 
 **Tasks**:
-- [ ] Build accounts page `src/app/(dashboard)/accounts/page.tsx`
-- [ ] Build account list `src/components/accounts/account-list.tsx`:
+- [x] Build accounts page `src/app/(dashboard)/accounts/page.tsx`
+- [x] Build account list `src/components/accounts/account-list.tsx`:
   - All linked Google accounts
   - Active account highlighted with badge
   - Token status indicator: green (active) / yellow (expired) / red (revoked)
   - Last used timestamp
-- [ ] "Link New Account" button → redirects to `/api/auth/google/link`
-- [ ] Account actions:
+- [x] "Link New Account" button → redirects to `/api/auth/google/link`
+- [x] Account actions:
   - "Set as Active" → PATCH `/api/accounts/[id]`
   - "Re-authenticate" → redirect to Google OAuth (for revoked accounts)
   - "Remove Account" → confirmation dialog → DELETE `/api/accounts/[id]`
-- [ ] Create account management API routes:
+- [x] Create account management API routes:
   - `DELETE /api/accounts/[id]/route.ts` → remove account + tokens
   - `PATCH /api/accounts/[id]/route.ts` → update is_active
   - `POST /api/accounts/[id]/refresh-token/route.ts` → force token refresh
   - All routes verify Clerk auth + account ownership
-- [ ] Build account card `src/components/accounts/account-card.tsx`:
+- [x] Build account card `src/components/accounts/account-card.tsx`:
   - Email, display name
   - Added date, token status
   - Quick quota summary (total models, exhausted count)
