@@ -47,6 +47,11 @@ BEGIN
   SET LOCAL lock_timeout = '10s';
   PERFORM pg_advisory_xact_lock(hashtextextended(v_owner, 0));
 
+  -- Re-check if account still exists after acquiring the lock
+  IF NOT EXISTS (SELECT 1 FROM public.google_accounts WHERE id = p_account_id) THEN
+    RAISE EXCEPTION 'Not found';
+  END IF;
+
   SELECT access_token_secret_id, refresh_token_secret_id INTO v_old_access_id, v_old_refresh_id
   FROM public.google_tokens WHERE account_id = p_account_id;
 
@@ -297,6 +302,8 @@ $$ LANGUAGE plpgsql;
 --     access_token_secret_id at another Vault secret.
 --   - quota_cache loses DELETE (upserts cover INSERT + UPDATE).
 DROP POLICY IF EXISTS "Users can manage their own tokens" ON public.google_tokens;
+DROP POLICY IF EXISTS "Users can read their own tokens" ON public.google_tokens;
+DROP POLICY IF EXISTS "Users can update their own tokens" ON public.google_tokens;
 
 CREATE POLICY "Users can read their own tokens" ON public.google_tokens
   FOR SELECT TO authenticated USING (
@@ -316,6 +323,9 @@ REVOKE UPDATE ON public.google_tokens FROM authenticated;
 GRANT UPDATE (project_id, updated_at) ON public.google_tokens TO authenticated;
 
 DROP POLICY IF EXISTS "Users can manage their own quota cache" ON public.quota_cache;
+DROP POLICY IF EXISTS "Users can read their own quota cache" ON public.quota_cache;
+DROP POLICY IF EXISTS "Users can insert their own quota cache" ON public.quota_cache;
+DROP POLICY IF EXISTS "Users can update their own quota cache" ON public.quota_cache;
 
 CREATE POLICY "Users can read their own quota cache" ON public.quota_cache
   FOR SELECT TO authenticated USING (
