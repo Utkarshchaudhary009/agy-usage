@@ -31,14 +31,26 @@ async function getOwnedAccountId(
   userId: string,
   id: string,
 ) {
-  const { data: account } = await supabase
+  const { data, error } = await supabase
     .from("google_accounts")
     .select("id")
     .eq("id", id)
     .eq("clerk_user_id", userId)
     .single();
 
-  return account ?? null;
+  return { data, error };
+}
+
+function internalError(action: string, cause?: unknown) {
+  console.error(`Failed to ${action} account:`, cause);
+  return NextResponse.json(
+    {
+      error: "Internal Server Error",
+      code: "INTERNAL_ERROR",
+      message: `Failed to ${action} account`,
+    },
+    { status: 500 },
+  );
 }
 
 export async function PATCH(_req: NextRequest, { params }: RouteContext) {
@@ -48,7 +60,12 @@ export async function PATCH(_req: NextRequest, { params }: RouteContext) {
   const { id } = await params;
 
   const supabase = await createServerClient();
-  const account = await getOwnedAccountId(supabase, userId, id);
+  const { data: account, error: lookupError } = await getOwnedAccountId(
+    supabase,
+    userId,
+    id,
+  );
+  if (lookupError) return internalError("update", lookupError);
   if (!account) return notFound();
 
   // Single atomic RPC: activates this account and deactivates the rest.
@@ -56,17 +73,7 @@ export async function PATCH(_req: NextRequest, { params }: RouteContext) {
     p_account_id: id,
   });
 
-  if (error) {
-    console.error("Failed to activate account:", error);
-    return NextResponse.json(
-      {
-        error: "Internal Server Error",
-        code: "INTERNAL_ERROR",
-        message: "Failed to update account",
-      },
-      { status: 500 },
-    );
-  }
+  if (error) return internalError("update", error);
 
   return NextResponse.json({ success: true });
 }
@@ -78,7 +85,12 @@ export async function DELETE(_req: NextRequest, { params }: RouteContext) {
   const { id } = await params;
 
   const supabase = await createServerClient();
-  const account = await getOwnedAccountId(supabase, userId, id);
+  const { data: account, error: lookupError } = await getOwnedAccountId(
+    supabase,
+    userId,
+    id,
+  );
+  if (lookupError) return internalError("remove", lookupError);
   if (!account) return notFound();
 
   // Permanently removes the account, its tokens, vault secrets, and quota cache.
@@ -86,17 +98,7 @@ export async function DELETE(_req: NextRequest, { params }: RouteContext) {
     p_account_id: id,
   });
 
-  if (error) {
-    console.error("Failed to delete account:", error);
-    return NextResponse.json(
-      {
-        error: "Internal Server Error",
-        code: "INTERNAL_ERROR",
-        message: "Failed to remove account",
-      },
-      { status: 500 },
-    );
-  }
+  if (error) return internalError("remove", error);
 
   return NextResponse.json({ success: true });
 }

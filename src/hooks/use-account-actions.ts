@@ -30,7 +30,11 @@ export function useAccountActions(): UseAccountActionsResult {
     ) => {
       setPending({ type, accountId });
       try {
-        const res = await fetch(url, options);
+        const res = await fetch(url, {
+          ...options,
+          // Bound the request so a stalled server cannot hang the UI.
+          signal: AbortSignal.timeout(15_000),
+        });
         const json = (await res.json().catch(() => ({}))) as {
           message?: string;
           error?: string;

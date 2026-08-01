@@ -38,6 +38,8 @@ async function performTokenRefresh(
       tokenResponse = await fetch(GOOGLE_OAUTH.tokenUrl, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        // Bound each attempt so a stalled Google response cannot hang callers.
+        signal: AbortSignal.timeout(10_000),
         body: new URLSearchParams({
           client_id: GOOGLE_OAUTH.clientId,
           client_secret: GOOGLE_OAUTH.clientSecret,
@@ -200,8 +202,11 @@ export const getValidAccessToken = cache(async function getValidAccessToken(
     return access_token;
   }
 
-  // 2b. Expired, we need to refresh
-  const { data: refreshToken, error: refreshRpcError } = await supabase.rpc(
+  // 2b. Expired, we need to refresh. get_decrypted_refresh_token is
+  // service-role-only; ownership was already enforced by the RLS-scoped
+  // account lookup above and get_valid_token_metadata's internal check.
+  const tokenClient = createServiceClient();
+  const { data: refreshToken, error: refreshRpcError } = await tokenClient.rpc(
     "get_decrypted_refresh_token",
     { p_account_id: accountId },
   );
@@ -210,7 +215,7 @@ export const getValidAccessToken = cache(async function getValidAccessToken(
     throw new Error("No refresh token available to renew access token");
   }
 
-  return performTokenRefresh(supabase, accountId, refreshToken);
+  return performTokenRefresh(tokenClient, accountId, refreshToken);
 });
 
 /**
@@ -219,12 +224,26 @@ export const getValidAccessToken = cache(async function getValidAccessToken(
  * (or revoked if Google rejects the refresh token). Not cached: every call
  * hits the token endpoint.
  *
+ * Ownership is verified via an RLS-scoped lookup before the service-role
+ * token path is used (get_decrypted_refresh_token is service-role-only).
+ *
  * @param accountId - The ID of the Google account
  */
 export async function forceRefreshToken(accountId: string): Promise<string> {
-  const supabase = await createServerClient();
+  const server = await createServerClient();
 
-  const { data: refreshToken, error: refreshRpcError } = await supabase.rpc(
+  const { data: account } = await server
+    .from("google_accounts")
+    .select("id")
+    .eq("id", accountId)
+    .single();
+
+  if (!account) {
+    throw new Error("Not authorized to refresh this account");
+  }
+
+  const service = createServiceClient();
+  const { data: refreshToken, error: refreshRpcError } = await service.rpc(
     "get_decrypted_refresh_token",
     { p_account_id: accountId },
   );
@@ -233,7 +252,7 @@ export async function forceRefreshToken(accountId: string): Promise<string> {
     throw new Error("No refresh token available to renew access token");
   }
 
-  return performTokenRefresh(supabase, accountId, refreshToken);
+  return performTokenRefresh(service, accountId, refreshToken);
 }
 
 /**

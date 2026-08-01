@@ -8,7 +8,6 @@ import {
   Trash2,
   UserCheck,
 } from "lucide-react";
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -99,9 +98,11 @@ export function AccountCard({
           <Badge
             variant={TOKEN_BADGE_VARIANTS[account.tokenStatus]}
             className={
-              account.tokenStatus === "expired"
-                ? "text-amber-600 dark:text-amber-400"
-                : undefined
+              account.tokenStatus === "active"
+                ? "text-emerald-600 dark:text-emerald-400"
+                : account.tokenStatus === "expired"
+                  ? "text-amber-600 dark:text-amber-400"
+                  : undefined
             }
           >
             {TOKEN_STATUS_LABELS[account.tokenStatus]}
@@ -155,10 +156,10 @@ export function AccountCard({
 
           {account.tokenStatus === "revoked" && (
             <Button asChild size="sm" variant="outline">
-              <Link href="/api/auth/google/link">
+              <a href="/api/auth/google/link">
                 <KeyRound />
                 Re-authenticate
-              </Link>
+              </a>
             </Button>
           )}
 

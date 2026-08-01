@@ -1,7 +1,6 @@
 "use client";
 
 import { AlertCircle, CheckCircle2, Plus } from "lucide-react";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { useAccountActions } from "@/hooks/use-account-actions";
 import type { LinkedAccount } from "@/lib/types/account";
@@ -27,10 +26,10 @@ export function AccountList({
           {accounts.length} linked account{accounts.length === 1 ? "" : "s"}
         </p>
         <Button asChild>
-          <Link href="/api/auth/google/link">
+          <a href="/api/auth/google/link">
             <Plus />
             Link New Account
-          </Link>
+          </a>
         </Button>
       </div>
 
@@ -62,10 +61,10 @@ export function AccountList({
             account you link becomes your active account.
           </p>
           <Button asChild>
-            <Link href="/api/auth/google/link">
+            <a href="/api/auth/google/link">
               <Plus />
               Link Google Account
-            </Link>
+            </a>
           </Button>
         </div>
       ) : (
