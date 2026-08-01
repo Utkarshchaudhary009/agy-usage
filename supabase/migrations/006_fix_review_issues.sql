@@ -44,7 +44,8 @@ BEGIN
 
   -- Same per-user lock as delete_account_with_tokens / set_active_account:
   -- a concurrent upsert cannot race a delete and leave orphaned secrets.
-  PERFORM pg_advisory_xact_lock(hashtext(v_owner));
+  SET LOCAL lock_timeout = '10s';
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_owner, 0));
 
   SELECT access_token_secret_id, refresh_token_secret_id INTO v_old_access_id, v_old_refresh_id
   FROM public.google_tokens WHERE account_id = p_account_id;
@@ -175,10 +176,12 @@ CREATE POLICY "Users can insert their own accounts" ON public.google_accounts
 
 -- Only OAuth-flow columns may be written directly: display_name, token_status,
 -- and last_used_at (updated by the link callback and token refreshes). The
--- remaining columns are revoked so is_active changes must go through
--- set_active_account and identity/audit columns stay immutable.
-REVOKE UPDATE (id, clerk_user_id, email, is_active, added_at)
-  ON public.google_accounts FROM authenticated;
+-- remaining columns are protected from direct UPDATE so is_active changes must
+-- go through set_active_account and identity/audit columns stay immutable.
+-- Note: A column-level REVOKE does not override a table-level GRANT, so we
+-- must REVOKE table-level UPDATE and then GRANT specific columns.
+REVOKE UPDATE ON public.google_accounts FROM authenticated;
+GRANT UPDATE (display_name, token_status, last_used_at) ON public.google_accounts TO authenticated;
 
 CREATE POLICY "Users can update their own accounts" ON public.google_accounts
   FOR UPDATE TO authenticated
@@ -216,7 +219,8 @@ BEGIN
 
   -- Serialize per-user account mutations so the active-account invariant
   -- cannot be raced by concurrent requests.
-  PERFORM pg_advisory_xact_lock(hashtext(v_owner));
+  SET LOCAL lock_timeout = '10s';
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_owner, 0));
 
   SELECT access_token_secret_id, refresh_token_secret_id
     INTO v_access_secret_id, v_refresh_secret_id
@@ -271,7 +275,8 @@ BEGIN
     END IF;
   END IF;
 
-  PERFORM pg_advisory_xact_lock(hashtext(v_owner));
+  SET LOCAL lock_timeout = '10s';
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_owner, 0));
 
   UPDATE public.google_accounts
     SET is_active = false
@@ -307,8 +312,8 @@ CREATE POLICY "Users can update their own tokens" ON public.google_tokens
     EXISTS (SELECT 1 FROM public.google_accounts WHERE id = google_tokens.account_id AND clerk_user_id = requesting_user_id())
   );
 
-REVOKE UPDATE (account_id, access_token_secret_id, refresh_token_secret_id, expires_at)
-  ON public.google_tokens FROM authenticated;
+REVOKE UPDATE ON public.google_tokens FROM authenticated;
+GRANT UPDATE (project_id, updated_at) ON public.google_tokens TO authenticated;
 
 DROP POLICY IF EXISTS "Users can manage their own quota cache" ON public.quota_cache;
 

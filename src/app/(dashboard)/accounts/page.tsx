@@ -112,7 +112,7 @@ async function AccountsLoader({
     return (
       <AccountList
         accounts={[]}
-        errorMessage="Could not load your accounts. Please try again."
+        errorMessage={null}
         successMessage={null}
         loadFailed
       />
