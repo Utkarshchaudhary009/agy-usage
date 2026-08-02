@@ -729,7 +729,7 @@ src/app/api/accounts/[id]/refresh-token/route.ts
 **Feature**: Inngest integration + historical quota snapshot storage
 
 **Tasks**:
-- [ ] Install and configure Inngest:
+- [x] Install and configure Inngest:
   - `src/lib/inngest/client.ts` → Inngest client instance
   ```typescript
   import { Inngest } from 'inngest'
@@ -742,7 +742,7 @@ src/app/api/accounts/[id]/refresh-token/route.ts
   import { functions } from '@/lib/inngest/functions'
   export const { GET, POST, PUT } = serve({ client: inngest, functions })
   ```
-- [ ] Create migration `003_quota_history.sql`:
+- [x] Create migration `007_quota_history.sql`:
   ```sql
   CREATE TABLE public.quota_snapshots (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -767,11 +767,11 @@ src/app/api/accounts/[id]/refresh-token/route.ts
   CREATE INDEX idx_snapshots_time
     ON public.quota_snapshots (account_id, timestamp DESC);
   ```
-- [ ] Create quota history service `src/lib/quota/history.ts`:
+- [x] Create quota history service `src/lib/quota/history.ts`:
   - `saveSnapshot(accountId, snapshot)` → insert into both tables
   - `getHistory(accountId, from, to)` → time-range query
   - `getModelHistory(accountId, modelId, from, to)` → per-model history
-- [ ] Create Inngest function for periodic quota polling `src/lib/inngest/functions/poll-quota.ts`:
+- [x] Create Inngest function for periodic quota polling `src/lib/inngest/functions/poll-quota.ts`:
   ```typescript
   export const pollQuota = inngest.createFunction(
     { id: 'poll-quota-all-users', name: 'Poll Quota for All Users' },
@@ -803,8 +803,8 @@ src/app/api/accounts/[id]/refresh-token/route.ts
     }
   )
   ```
-- [ ] Update quota service to also save snapshot on every fresh user-initiated fetch
-- [ ] Create `src/lib/inngest/functions/index.ts` → export all functions
+- [x] Update quota service to also save snapshot on every fresh user-initiated fetch
+- [x] Create `src/lib/inngest/functions/index.ts` → export all functions
 
 **Deliverable**: Inngest connected. Every quota fetch (user-initiated or cron) is recorded as a historical snapshot. Inngest polls every 30 min to build history even when user isn't on the site.
 
@@ -816,7 +816,7 @@ src/lib/inngest/functions/poll-quota.ts
 src/app/api/inngest/route.ts
 src/lib/quota/history.ts
 src/lib/types/history.ts
-supabase/migrations/003_quota_history.sql
+supabase/migrations/007_quota_history.sql
 ```
 
 ---

@@ -7,15 +7,19 @@ import {
 import { parseQuotaSnapshot } from "../google/parser";
 import { resolveProjectId } from "../google/project-resolver";
 import { getValidAccessToken } from "../google/token-manager";
-import { createServerClient } from "../supabase/server";
+import { createServerClient, createServiceClient } from "../supabase/server";
 import type { QuotaSnapshot } from "../types/quota";
+import { saveSnapshot } from "./history";
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 export async function fetchQuotaForAccount(
   accountId: string,
+  options?: { asBackgroundJob?: boolean },
 ): Promise<QuotaSnapshot> {
-  const supabase = await createServerClient();
+  const supabase = options?.asBackgroundJob
+    ? createServiceClient()
+    : await createServerClient();
 
   // Get account info to include email in snapshot
   const { data: account, error: accountError } = await supabase
@@ -28,8 +32,8 @@ export async function fetchQuotaForAccount(
     throw new Error(`Account not found: ${accountError?.message}`);
   }
 
-  const token = await getValidAccessToken(accountId);
-  const projectId = await resolveProjectId(accountId);
+  const token = await getValidAccessToken(accountId, options);
+  const projectId = await resolveProjectId(accountId, options);
 
   const [codeAssist, modelsResponse] = await Promise.all([
     loadCodeAssist(token, accountId),
@@ -94,6 +98,10 @@ export async function getQuota(
 
   const snapshot = await fetchQuotaForAccount(accountId);
   await saveToCache(accountId, snapshot);
+  // Also append to the historical table for charts/analytics
+  await saveSnapshot(accountId, snapshot).catch((err) => {
+    console.error(`Failed to save history for ${accountId}:`, err);
+  });
   return snapshot;
 }
 
