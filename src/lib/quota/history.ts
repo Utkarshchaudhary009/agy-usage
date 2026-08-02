@@ -50,7 +50,9 @@ export async function saveSnapshot(
       .insert(modelInserts);
 
     if (modelsError) {
-      throw new Error(`Failed to save model quota history: ${modelsError.message}`);
+      throw new Error(
+        `Failed to save model quota history: ${modelsError.message}`,
+      );
     }
   }
 }

@@ -12,7 +12,7 @@ export const pollQuota = inngest.createFunction(
   async ({ step }) => {
     const accounts = await step.run("get-all-active-accounts", async () => {
       const supabase = createServiceClient();
-      
+
       const allAccounts: { id: string }[] = [];
       let hasMore = true;
       let start = 0;
