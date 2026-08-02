@@ -33,7 +33,7 @@ export async function fetchQuotaForAccount(
   }
 
   const token = await getValidAccessToken(accountId, options);
-  const projectId = await resolveProjectId(accountId);
+  const projectId = await resolveProjectId(accountId, options);
 
   const [codeAssist, modelsResponse] = await Promise.all([
     loadCodeAssist(token, accountId),

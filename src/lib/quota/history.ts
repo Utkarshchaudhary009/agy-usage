@@ -31,8 +31,7 @@ export async function saveSnapshot(
     .single();
 
   if (snapshotError || !snapshotData) {
-    console.error("Failed to save quota snapshot:", snapshotError);
-    return;
+    throw new Error(`Failed to save quota snapshot: ${snapshotError?.message}`);
   }
 
   // Insert into model_quota_history
@@ -51,7 +50,7 @@ export async function saveSnapshot(
       .insert(modelInserts);
 
     if (modelsError) {
-      console.error("Failed to save model quota history:", modelsError);
+      throw new Error(`Failed to save model quota history: ${modelsError.message}`);
     }
   }
 }

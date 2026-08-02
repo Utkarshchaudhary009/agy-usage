@@ -12,20 +12,33 @@ export const pollQuota = inngest.createFunction(
   async ({ step }) => {
     const accounts = await step.run("get-all-active-accounts", async () => {
       const supabase = createServiceClient();
-      // Query all accounts with active tokens (where token_status is active and is_active is true)
-      // Actually we probably want all linked accounts?
-      // Wait, the implementation plan just says "Query all accounts with active tokens"
-      const { data, error } = await supabase
-        .from("google_accounts")
-        .select("id")
-        .eq("token_status", "active")
-        .eq("is_active", true);
+      
+      const allAccounts: { id: string }[] = [];
+      let hasMore = true;
+      let start = 0;
+      const LIMIT = 1000;
 
-      if (error) {
-        throw new Error(`Failed to fetch accounts: ${error.message}`);
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from("google_accounts")
+          .select("id")
+          .eq("token_status", "active")
+          .eq("is_active", true)
+          .range(start, start + LIMIT - 1);
+
+        if (error) {
+          throw new Error(`Failed to fetch accounts: ${error.message}`);
+        }
+
+        if (data && data.length > 0) {
+          allAccounts.push(...data);
+          start += LIMIT;
+        } else {
+          hasMore = false;
+        }
       }
 
-      return data ?? [];
+      return allAccounts;
     });
 
     // Fan out: Use coordinator pattern to emit events for parallel execution

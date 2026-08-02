@@ -1,6 +1,6 @@
 CREATE TABLE public.quota_snapshots (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  account_id UUID REFERENCES public.google_accounts(id) ON DELETE CASCADE,
+  account_id UUID NOT NULL REFERENCES public.google_accounts(id) ON DELETE CASCADE,
   timestamp TIMESTAMPTZ DEFAULT NOW(),
   plan_type TEXT,
   prompt_credits_available INTEGER,
@@ -10,7 +10,7 @@ CREATE TABLE public.quota_snapshots (
 
 CREATE TABLE public.model_quota_history (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  snapshot_id UUID REFERENCES public.quota_snapshots(id) ON DELETE CASCADE,
+  snapshot_id UUID NOT NULL REFERENCES public.quota_snapshots(id) ON DELETE CASCADE,
   model_id TEXT NOT NULL,
   label TEXT NOT NULL,
   remaining_percentage NUMERIC(5,4),
@@ -20,6 +20,9 @@ CREATE TABLE public.model_quota_history (
 
 CREATE INDEX idx_snapshots_time
   ON public.quota_snapshots (account_id, timestamp DESC);
+
+CREATE INDEX idx_model_quota_history_snapshot_id
+  ON public.model_quota_history (snapshot_id);
 
 ALTER TABLE public.quota_snapshots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.model_quota_history ENABLE ROW LEVEL SECURITY;

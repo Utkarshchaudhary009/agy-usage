@@ -742,7 +742,7 @@ src/app/api/accounts/[id]/refresh-token/route.ts
   import { functions } from '@/lib/inngest/functions'
   export const { GET, POST, PUT } = serve({ client: inngest, functions })
   ```
-- [x] Create migration `003_quota_history.sql`:
+- [x] Create migration `007_quota_history.sql`:
   ```sql
   CREATE TABLE public.quota_snapshots (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -816,7 +816,7 @@ src/lib/inngest/functions/poll-quota.ts
 src/app/api/inngest/route.ts
 src/lib/quota/history.ts
 src/lib/types/history.ts
-supabase/migrations/003_quota_history.sql
+supabase/migrations/007_quota_history.sql
 ```
 
 ---
