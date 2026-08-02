@@ -11,3 +11,17 @@ export interface ModelHistoryWithSnapshot extends ModelQuotaHistoryRecord {
     timestamp: string;
   };
 }
+
+export interface SnapshotData {
+  models?: {
+    modelId: string;
+    modelProvider?: string;
+    remainingPercentage: number;
+    isExhausted?: boolean;
+    label?: string;
+  }[];
+  promptCredits?: {
+    available: number;
+    monthly: number;
+  };
+}

@@ -20,8 +20,8 @@ export function useSupabaseClient() {
           let clerkToken: string | null = null;
           try {
             clerkToken = (await session?.getToken()) ?? null;
-          } catch (e: any) {
-            if (e?.name === "ClerkOfflineError") {
+          } catch (e: unknown) {
+            if (e instanceof Error && e.name === "ClerkOfflineError") {
               clerkToken = null;
             } else {
               throw e;

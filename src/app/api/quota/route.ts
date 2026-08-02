@@ -109,7 +109,7 @@ export async function GET(req: NextRequest) {
         cachedAt: new Date(latestTimestamp).toISOString(),
       });
     }
-  } catch (error: any) {
+  } catch (error) {
     console.error("Quota API Error:", error);
     return NextResponse.json(
       {
