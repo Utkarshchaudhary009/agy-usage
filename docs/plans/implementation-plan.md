@@ -283,7 +283,7 @@ supabase/migrations/001_core_schema.sql
   - Enable Email/password sign-in
   - Enable Google social connection (this is for APP login only, NOT Cloud Code)
   - Set redirect URLs
-- [x] Create Clerk middleware `src/middleware.ts`:
+- [x] Create Clerk middleware `src/proxy.ts`:
   ```typescript
   import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 
@@ -328,7 +328,7 @@ supabase/migrations/001_core_schema.sql
 
 **Files**:
 ```
-src/middleware.ts
+src/proxy.ts
 src/app/layout.tsx                              # ClerkProvider wrapper
 src/app/sign-in/[[...sign-in]]/page.tsx
 src/app/sign-up/[[...sign-up]]/page.tsx
@@ -1252,7 +1252,7 @@ src/components/wakeup/cost-tracker.tsx
 ```
 src/app/error.tsx
 src/app/not-found.tsx
-src/middleware.ts                    # Final with rate limiting
+src/proxy.ts                    # Final with rate limiting
 README.md                           # Updated
 ```
 

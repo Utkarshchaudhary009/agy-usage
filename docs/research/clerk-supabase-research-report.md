@@ -10,7 +10,7 @@
 - **Clerk ↔ Supabase "native" third-party auth is the ONLY recommended path.** Clerk is configured as a *third-party auth provider* inside Supabase; Supabase's Data API/RLS trusts Clerk-issued session tokens by verifying them against Clerk's JWKS (asymmetric keys + OIDC issuer discovery). No custom JWT template, no shared Supabase JWT secret. ([clerk.com supabase guide](https://clerk.com/docs/guides/development/integrations/databases/supabase))
 - **The Supabase JWT template was deprecated on April 1, 2025** (by both Clerk and Supabase). Do NOT use `getToken({ template: 'supabase' })` anymore. The old integration still works "in an unofficial manner" with limited support; projects on it were excluded from Supabase TP-MAU charges **until at least Jan 1, 2026**. ([supabase.com](https://supabase.com/docs/guides/auth/third-party/clerk))
 - **Setup = two dashboard steps:** (1) Clerk Dashboard → [Connect with Supabase](https://dashboard.clerk.com/setup/supabase) → Activate → copy **Clerk domain**; (2) Supabase Dashboard → **Authentication > Sign In / Providers** → Add provider → **Clerk** → paste the domain. Activating the integration automatically adds the **`role: authenticated` claim** to session tokens. ([clerk.com supabase guide](https://clerk.com/docs/guides/development/integrations/databases/supabase))
-- **RLS uses Supabase's built-in `auth.jwt() ->> 'sub'`** (the Clerk user ID), with policies scoped `to authenticated`. The old custom `requesting_user_id()` Postgres function is **obsolete** in the current guide. ([clerk.com supabase guide](https://clerk.com/docs/guides/development/integrations/databases/supabase))
+- **RLS uses Supabase's built-in `auth.jwt() ->> 'sub'`** (the Clerk user ID), with policies scoped `to authenticated`. The `requesting_user_id()` Postgres function remains the required policy contract and should be implemented as `SELECT auth.jwt() ->> 'sub'`. ([clerk.com supabase guide](https://clerk.com/docs/guides/development/integrations/databases/supabase))
 - **Exact client code:** `createClient(URL, PUBLISHABLE_KEY, { async accessToken() { return session?.getToken() ?? null } })` via `useSession()`. **Exact server code:** `createClient(URL, KEY, { async accessToken() { return (await auth()).getToken() } })`. **`auth()` is async** since `@clerk/nextjs` v6 (Oct 22, 2024) — `await` is mandatory. ([clerk.com supabase guide](https://clerk.com/docs/guides/development/integrations/databases/supabase), [v6 changelog](https://clerk.com/changelog/2024-10-22-clerk-nextjs-v6.md))
 - **Next.js 16 renamed `middleware.ts` → `proxy.ts`** (exported function `proxy`; Node.js runtime only; `middleware.ts` deprecated with warning). Clerk: "proxy.ts on Next.js 16+, middleware.ts on 15 and below. The code itself remains the same; only the filename changes." ([clerk-middleware docs](https://clerk.com/docs/reference/nextjs/clerk-middleware.md), [Next.js proxy docs](https://nextjs.org/docs/app/api-reference/file-conventions/proxy))
 - **`createRouteMatcher()` is deprecated** (runtime warning; removed next major). Clerk now says *"Middleware is not the best place to protect routes"* — protect resources with **`await auth.protect()`** in pages, Route Handlers, and Server Actions. Motivation: middleware auth-bypass vulnerabilities (incl. GHSA-vqx2-fgx2-5wq9; CVE-2025-29927 in Next.js middleware) and Server Functions being callable by ID, not path. `clerkMiddleware()` itself stays (still required). ([migrate-from-create-route-matcher](https://clerk.com/docs/guides/development/upgrading/upgrade-guides/migrate-from-create-route-matcher.md))
@@ -179,7 +179,7 @@ The native integration does **not** sync user records between Clerk and Supabase
 | Verification | Symmetric (shared secret) | Asymmetric (Clerk domain JWKS via OIDC discovery) |
 | Latency | New JWT generated per request (network + rate-limit cost) | Session token already available; `getToken()` pre-refreshes in background |
 | `role` claim | Set inside the template claims | Auto-added when you activate the integration (or via manual session-token customization) |
-| RLS | `requesting_user_id()` custom function parsing `request.jwt.claims` | Built-in `auth.jwt() ->> 'sub'` |
+| RLS | `requesting_user_id()` custom function parsing `request.jwt.claims` | `requesting_user_id()` implemented using built-in `auth.jwt() ->> 'sub'` |
 | Env var | `SUPABASE_KEY` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` (anon key) | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (Publishable key — renamed) |
 | Status | Deprecated Apr 1, 2025; TP-MAU-exempt only until ≥ Jan 1, 2026 | Recommended, supported |
 
@@ -198,7 +198,7 @@ Clerk's summary: *"No need to fetch a new token for each Supabase request. No ne
 3. Replace every `getToken({ template: 'supabase' })` with plain `getToken()` (server + client).
 4. Swap `accessToken()` option plumbing if you used the old `global.fetch` header-injection pattern.
 5. Swap `NEXT_PUBLIC_SUPABASE_ANON_KEY` → `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (Publishable key).
-6. Keep RLS as-is if it already uses `auth.jwt() ->> 'sub'`; if it used a custom `requesting_user_id()` function, migrate to `auth.jwt() ->> 'sub'`.
+6. Keep RLS as-is using the `requesting_user_id()` function; ensure it is implemented to delegate to `auth.jwt() ->> 'sub'`.
 7. Delete the old Supabase JWT template from the Clerk Dashboard and remove the shared JWT secret from Supabase settings.
 
 ### 3.5 Nuances
@@ -299,7 +299,7 @@ New workflow: `npx clerk@latest init --framework next`, `clerk doctor`, `npx cle
 ## 5. Common Misconceptions / Contradictions with Older Docs & Tutorials
 
 1. **"Use a Supabase JWT template with `getToken({ template: 'supabase' })`."** — Deprecated April 1, 2025. Pass the plain session token via the `accessToken` option. ([clerk.com supabase guide](https://clerk.com/docs/guides/development/integrations/databases/supabase))
-2. **"Create a `requesting_user_id()` Postgres function for RLS."** — Obsolete. Use Supabase's built-in `auth.jwt() ->> 'sub'` in column defaults and policies. (same guide)
+2. **"Create a `requesting_user_id()` Postgres function for RLS."** -> Still required. Implement it using Supabase's built-in `auth.jwt() ->> 'sub'` to provide the user ID in policies. (same guide)
 3. **"The middleware file is always `middleware.ts`."** — On Next.js 16+ it's **`proxy.ts`** (exported function `proxy`); `middleware.ts` logs a deprecation warning in Next 16. ([clerk-middleware docs](https://clerk.com/docs/reference/nextjs/clerk-middleware.md))
 4. **"`auth()` is synchronous."** — Since `@clerk/nextjs` v6 (Oct 2024) it's async: `const { userId } = await auth()`; `protect` is a property of the awaited result: `await auth.protect()`. ([v6 changelog](https://clerk.com/changelog/2024-10-22-clerk-nextjs-v6.md))
 5. **"Middleware is where you protect routes."** — Clerk now explicitly says *"Middleware is not the best place to protect routes"*; `createRouteMatcher()` deprecated (bypass vectors incl. GHSA-vqx2-fgx2-5wq9, CVE-2025-29927; Server Functions callable by ID). Protect resources with `auth.protect()`. ([migrate guide](https://clerk.com/docs/guides/development/upgrading/upgrade-guides/migrate-from-create-route-matcher.md))
@@ -416,12 +416,12 @@ New workflow: `npx clerk@latest init --framework next`, `clerk doctor`, `npx cle
 
 The project's planned architecture (Clerk Native Third-Party Auth, session token → Supabase, RLS via `auth.jwt() ->> 'sub'`) **matches current official guidance exactly**. Concrete deltas to verify/fix in the codebase:
 
-1. **`src/middleware.ts` → `proxy.ts`** if the project is on Next.js 16 (exported function `proxy`; identical contents). Current file exists as `middleware.ts` — rename per `next` version in `package.json`.
+1. **`src/proxy.ts` -> `proxy.ts`** if the project is on Next.js 16 (exported function `proxy`; identical contents). Current file exists as `middleware.ts` — rename per `next` version in `package.json`.
 2. **Middleware auth gating is deprecated:** `createRouteMatcher()` + `auth.protect()` inside middleware should move to resource-level `await auth.protect()` in pages/route handlers/server actions. Keep `clerkMiddleware()` itself.
 3. **`await auth()` everywhere** (already correct in `src/lib/supabase/server.ts`).
 4. **Supabase client:** official pattern is the `accessToken()` option (server: `(await auth()).getToken()`; client: `session?.getToken() ?? null`) — the current `global.headers`/`global.fetch` wrapper works but the `accessToken` option is the documented approach.
 5. **Env var naming:** `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (not `ANON_KEY`) is the current Supabase name; both `.env.local.example` and Vercel should use it.
-6. **RLS:** the plan's `requesting_user_id()` helper is fine but the current official pattern is `auth.jwt() ->> 'sub'` directly; no migration needed if the function delegates to the `sub` claim.
+6. **RLS:** the plan's `requesting_user_id()` helper is fine and the current official pattern is to have it return `auth.jwt() ->> 'sub'` directly; no migration needed if the function delegates to the `sub` claim.
 7. **Clerk Core 3 (v7.x):** plan for `<Show>` (not `<SignedIn>`/`<Protect>`), `ClerkProvider` inside `<body>`, `getToken()` wrapped for `ClerkOfflineError`, `CLERK_ENCRYPTION_KEY` if `secretKey` is passed to middleware.
 8. **Supabase TP-MAU billing** (~$0.00325/MAU over quota) applies to the native integration — budget accordingly.
-9. **Dashboard setup required:** activate Supabase integration at `dashboard.clerk.com/setup/supabase` and register the Clerk domain as a provider in Supabase (Authentication → Sign In/Providers → Third Party Auth) — this is the actual root cause of the production "No suitable key or wrong key type" error observed in Vercel runtime logs.
+9. **Dashboard setup required:** activate Supabase integration at `dashboard.clerk.com/setup/supabase` and register the Clerk domain as a provider in Supabase (Authentication → Sign In/Providers → Third Party Auth) — this is the likely cause of the production "No suitable key or wrong key type" error observed in Vercel runtime logs.

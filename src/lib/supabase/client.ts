@@ -17,7 +17,16 @@ export function useSupabaseClient() {
       global: {
         fetch: async (fetchUrl, options = {}) => {
           // Natively supports Clerk's Third-Party Auth integration without custom JWT templates.
-          const clerkToken = await session?.getToken();
+          let clerkToken: string | null = null;
+          try {
+            clerkToken = (await session?.getToken()) ?? null;
+          } catch (e: any) {
+            if (e?.name === "ClerkOfflineError") {
+              clerkToken = null;
+            } else {
+              throw e;
+            }
+          }
 
           const headers = new Headers(options?.headers);
           if (clerkToken) {

@@ -7,7 +7,7 @@ const isPublicRoute = createRouteMatcher([
   "/api/inngest(.*)", // Inngest webhook endpoint
 ]);
 
-export default clerkMiddleware(async (auth, req) => {
+export const proxy = clerkMiddleware(async (auth, req) => {
   if (!isPublicRoute(req)) {
     await auth.protect();
   }
