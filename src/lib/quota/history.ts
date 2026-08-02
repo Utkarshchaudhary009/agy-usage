@@ -25,7 +25,7 @@ export async function saveSnapshot(
       plan_type: snapshot.planType,
       prompt_credits_available: snapshot.promptCredits?.available,
       prompt_credits_monthly: snapshot.promptCredits?.monthly,
-      snapshot_data: snapshot as any,
+      snapshot_data: snapshot as unknown as import("../types/database").Json,
     })
     .select("id")
     .single();
@@ -99,7 +99,7 @@ export async function getModelHistory(
     .eq("model_id", modelId)
     .gte("snapshot.timestamp", from.toISOString())
     .lte("snapshot.timestamp", to.toISOString())
-    .order("snapshot(timestamp)", { ascending: true });
+    .order("timestamp", { foreignTable: "snapshot", ascending: true });
 
   if (error) {
     throw new Error(`Failed to fetch model history: ${error.message}`);

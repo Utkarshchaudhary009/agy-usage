@@ -35,7 +35,12 @@ export const pollQuota = inngest.createFunction(
     }));
 
     if (events.length > 0) {
-      await step.sendEvent("dispatch-quota-fetches", events);
+      // Chunk events into batches of 100 to avoid overloading Inngest
+      const BATCH_SIZE = 100;
+      for (let i = 0; i < events.length; i += BATCH_SIZE) {
+        const batch = events.slice(i, i + BATCH_SIZE);
+        await step.sendEvent(`dispatch-quota-fetches-batch-${i}`, batch);
+      }
     }
 
     return { dispatched: events.length };
