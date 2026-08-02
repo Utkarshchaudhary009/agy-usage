@@ -103,6 +103,82 @@ export interface Database {
           },
         ];
       };
+      quota_snapshots: {
+        Row: {
+          id: string;
+          account_id: string;
+          timestamp: string;
+          plan_type: string | null;
+          prompt_credits_available: number | null;
+          prompt_credits_monthly: number | null;
+          snapshot_data: Json;
+        };
+        Insert: {
+          id?: string;
+          account_id: string;
+          timestamp?: string;
+          plan_type?: string | null;
+          prompt_credits_available?: number | null;
+          prompt_credits_monthly?: number | null;
+          snapshot_data: Json;
+        };
+        Update: {
+          id?: string;
+          account_id?: string;
+          timestamp?: string;
+          plan_type?: string | null;
+          prompt_credits_available?: number | null;
+          prompt_credits_monthly?: number | null;
+          snapshot_data?: Json;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "quota_snapshots_account_id_fkey";
+            columns: ["account_id"];
+            isOneToOne: false;
+            referencedRelation: "google_accounts";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      model_quota_history: {
+        Row: {
+          id: string;
+          snapshot_id: string;
+          model_id: string;
+          label: string;
+          remaining_percentage: number | null;
+          is_exhausted: boolean | null;
+          reset_time: string | null;
+        };
+        Insert: {
+          id?: string;
+          snapshot_id: string;
+          model_id: string;
+          label: string;
+          remaining_percentage?: number | null;
+          is_exhausted?: boolean | null;
+          reset_time?: string | null;
+        };
+        Update: {
+          id?: string;
+          snapshot_id?: string;
+          model_id?: string;
+          label?: string;
+          remaining_percentage?: number | null;
+          is_exhausted?: boolean | null;
+          reset_time?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "model_quota_history_snapshot_id_fkey";
+            columns: ["snapshot_id"];
+            isOneToOne: false;
+            referencedRelation: "quota_snapshots";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: {
       [_ in never]: never;
