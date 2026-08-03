@@ -6,31 +6,44 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { DateRangePicker } from "@/components/charts/date-range-picker";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { Database } from "@/lib/types/database";
 import type { QuotaSnapshotRecord, SnapshotData } from "@/lib/types/history";
 
 const BurndownChart = dynamic(
   () =>
     import("@/components/charts/burndown-chart").then((m) => m.BurndownChart),
-  { ssr: false },
+  {
+    ssr: false,
+    loading: () => <Skeleton className="h-[350px] w-full rounded-xl" />,
+  },
 );
 const CreditsChart = dynamic(
   () => import("@/components/charts/credits-chart").then((m) => m.CreditsChart),
-  { ssr: false },
+  {
+    ssr: false,
+    loading: () => <Skeleton className="h-[300px] w-full rounded-xl" />,
+  },
 );
 const ModelComparison = dynamic(
   () =>
     import("@/components/charts/model-comparison").then(
       (m) => m.ModelComparison,
     ),
-  { ssr: false },
+  {
+    ssr: false,
+    loading: () => <Skeleton className="h-[350px] w-full rounded-xl" />,
+  },
 );
 const AccountComparison = dynamic(
   () =>
     import("@/components/charts/account-comparison").then(
       (m) => m.AccountComparison,
     ),
-  { ssr: false },
+  {
+    ssr: false,
+    loading: () => <Skeleton className="h-[400px] w-full rounded-xl" />,
+  },
 );
 
 interface HistoryChartsProps {
@@ -57,6 +70,8 @@ export function HistoryCharts({ accounts }: HistoryChartsProps) {
       return;
     }
 
+    const abortController = new AbortController();
+
     async function fetchHistory() {
       setIsLoading(true);
       try {
@@ -68,6 +83,7 @@ export function HistoryCharts({ accounts }: HistoryChartsProps) {
 
         const res = await fetch(
           `/api/quota/history?accounts=${accountsParam}&from=${dateRange.from.toISOString()}&to=${dateRange.to.toISOString()}`,
+          { signal: abortController.signal },
         );
 
         if (res.ok) {
@@ -90,15 +106,22 @@ export function HistoryCharts({ accounts }: HistoryChartsProps) {
         } else {
           const errorData = await res.json();
           toast.error(errorData.message || "Failed to load history data");
+          setHistoryData({});
         }
-      } catch (_err) {
-        toast.error("Failed to load history data");
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name !== "AbortError") {
+          toast.error("Failed to load history data");
+          setHistoryData({});
+        }
       } finally {
-        setIsLoading(false);
+        if (!abortController.signal.aborted) {
+          setIsLoading(false);
+        }
       }
     }
 
     fetchHistory();
+    return () => abortController.abort();
   }, [selectedAccountId, dateRange, accounts]);
 
   const currentAccountSnapshots = useMemo(() => {
@@ -120,8 +143,10 @@ export function HistoryCharts({ accounts }: HistoryChartsProps) {
       const a = document.createElement("a");
       a.href = url;
       a.download = `quota-history-${new Date().toISOString().split("T")[0]}.json`;
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 100);
     } else {
       let csvContent =
         "account_id,timestamp,model_id,remaining_percentage,is_exhausted\n";
@@ -140,8 +165,10 @@ export function HistoryCharts({ accounts }: HistoryChartsProps) {
       const a = document.createElement("a");
       a.href = url;
       a.download = `quota-history-${new Date().toISOString().split("T")[0]}.csv`;
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 100);
     }
   };
 

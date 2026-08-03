@@ -28,23 +28,46 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(
       {
         error: "Bad Request",
+        code: "BAD_REQUEST",
         message: "account or accounts parameter is required",
       },
       { status: 400 },
     );
   }
 
-  const accountIdsToFetch = accountsParam
-    ? accountsParam.split(",")
-    : accountId
-      ? [accountId]
-      : [];
+  if (accountId && accountsParam) {
+    return NextResponse.json(
+      {
+        error: "Bad Request",
+        code: "BAD_REQUEST",
+        message: "Provide either account or accounts, not both.",
+      },
+      { status: 400 },
+    );
+  }
+
+  const accountIdsToFetch = Array.from(
+    new Set(
+      accountsParam ? accountsParam.split(",") : accountId ? [accountId] : [],
+    ),
+  );
 
   // Set default from/to if missing (default to last 7 days)
   const to = toParam ? new Date(toParam) : new Date();
   const from = fromParam
     ? new Date(fromParam)
     : new Date(to.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from > to) {
+    return NextResponse.json(
+      {
+        error: "Bad Request",
+        code: "BAD_REQUEST",
+        message: "Invalid date range.",
+      },
+      { status: 400 },
+    );
+  }
 
   try {
     // Validate account ownership
