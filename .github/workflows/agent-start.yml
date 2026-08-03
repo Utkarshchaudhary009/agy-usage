@@ -1,0 +1,169 @@
+name: "1. Orchestrator: Agent Start & Builder"
+
+on:
+  schedule:
+    - cron: '0 */3 * * *'
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "Coding task description for Kilo Code (leave blank to just start next phase)"
+        required: false
+        type: string
+
+jobs:
+  build-and-open-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install Project Dependencies
+        run: bun install
+
+      - name: Install Kilo Code CLI
+        run: npm install -g kilocode@latest
+
+      - name: Create Model Fallback Runner Script
+        run: |
+          cat <<'EOF' > kilocode-runner.sh
+          #!/usr/bin/env bash
+          PROMPT="$1"
+          MODELS=("tencent/hy3:free" "qwen/qwen-2.5-coder-32b-instruct:free" "openrouter/free")
+          for MODEL in "${MODELS[@]}"; do
+            echo "Attempting execution with model: $MODEL..."
+            if kilocode run --model "$MODEL" "$PROMPT"; then
+              echo "Task succeeded with $MODEL"
+              exit 0
+            fi
+            echo "Model $MODEL failed or rate-limited. Trying next fallback..."
+          done
+          echo "All model fallbacks failed."
+          exit 1
+          EOF
+          chmod +x kilocode-runner.sh
+
+      - name: Create Feature Branch
+        run: |
+          BRANCH_NAME="feature/task-$(date +%s)"
+          git config user.name "kilocode-bot"
+          git config user.email "bot@kilocode.ai"
+          git checkout -b "$BRANCH_NAME"
+          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+
+      - name: Run Kilo Code Builder Agent
+        env:
+          KILOCODE_API_KEY: ${{ secrets.KILOCODE_API_KEY }}
+        run: |
+          TASK_INPUT="${{ inputs.task }}"
+          
+          if [ -z "$TASK_INPUT" ]; then
+            PROMPT="Your task is to start the next phase of the project."
+          else
+            PROMPT="Your task is to implement the following specific request: $TASK_INPUT."
+          fi
+          
+          ./kilocode-runner.sh "$PROMPT"
+
+      - name: Local Pre-Push Verification Loop
+        env:
+          KILOCODE_API_KEY: ${{ secrets.KILOCODE_API_KEY }}
+        run: |
+          MAX_RETRIES=3
+          COUNT=0
+          until bun run lint 2>&1 && bun x tsc --noEmit 2>&1; do
+            COUNT=$((COUNT+1))
+            if [ $COUNT -ge $MAX_RETRIES ]; then
+              echo "Local verification failed after $MAX_RETRIES attempts. Halting."
+              exit 1
+            fi
+            BUILD_ERRORS=$((bun run lint && bun x tsc --noEmit) 2>&1 | tail -n 40)
+            echo "Local verification failed. Re-prompting Builder agent..."
+            ./kilocode-runner.sh \
+              "The previous code changes failed local linting or type-checking: $BUILD_ERRORS. Fix all local errors."
+          done
+
+      - name: Commit & Push Branch
+        run: |
+          git add -A
+          if git diff --staged --quiet; then
+            echo "No changes made by agent."
+            exit 1
+          fi
+          TASK_DESC="${{ inputs.task }}"
+          git commit -m "feat: ${TASK_DESC:-Autonomous Next Phase} [Kilo Code Bot]"
+          git pull --rebase origin "$BRANCH_NAME" || true
+          git push origin "$BRANCH_NAME"
+
+      - name: Create Pull Request & Initialize Optimistic State
+        env:
+          GH_TOKEN: ${{ secrets.ORCHESTRATOR_GH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          TASK_DESC="${{ inputs.task }}"
+          PR_URL=$(gh pr create \
+            --title "feat: ${TASK_DESC:-Autonomous Next Phase}" \
+            --body "Autonomous PR created by Kilo Code Builder Agent." \
+            --head "$BRANCH_NAME" \
+            --base "main")
+          
+          PR_NUMBER=$(echo "$PR_URL" | awk -F'/' '{print $NF}')
+          HEAD_SHA=$(git rev-parse HEAD)
+
+          INITIAL_STATE=$(cat <<EOF
+          <!-- ORCHESTRATOR_STATE:
+          {
+            "version": 1,
+            "run_id": "task-$(date +%s)",
+            "pr_number": $PR_NUMBER,
+            "head_sha": "$HEAD_SHA",
+            "branch": "$BRANCH_NAME",
+            "phase": "WAITING_FOR_REVIEWS",
+            "review_round": 1,
+            "reviews": {
+              "required": ["review-agent-a", "review-agent-b"],
+              "completed": {}
+            },
+            "deployment": {
+              "status": "pending",
+              "sha": "$HEAD_SHA"
+            },
+            "gates": {
+              "deployment_passed": false,
+              "reviews_passed": false
+            },
+            "attempts": {
+              "total_agent_runs": 1,
+              "max_limit": 10
+            },
+            "processed_event_ids": []
+          }
+          -->
+          EOF
+          )
+
+          gh pr comment "$PR_NUMBER" --body "$INITIAL_STATE"$'\n' "🤖 **Autonomous Orchestrator Initialized (Version 1).**"
+
+      - name: Generate GitHub Step Summary
+        run: |
+          TASK_DESC="${{ inputs.task }}"
+          cat <<EOF >> $GITHUB_STEP_SUMMARY
+          ### 🚀 Kilo Code Builder Agent Execution Completed
+          - **Branch:** \`${{ env.BRANCH_NAME }}\`
+          - **Task:** ${TASK_DESC:-Start Next Phase}
+          - **Local Pre-Push Verification:** Passed (\`bun run lint && bun x tsc --noEmit\`)
+          EOF

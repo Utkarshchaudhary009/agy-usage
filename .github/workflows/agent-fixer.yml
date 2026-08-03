@@ -1,0 +1,129 @@
+name: "5. Orchestrator: Fixer & Debugger Agent"
+
+on:
+  repository_dispatch:
+    types: [trigger-fixer, trigger-vercel-debugger]
+
+jobs:
+  apply-fixes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Fetch PR Branch Name
+        env:
+          GH_TOKEN: ${{ secrets.ORCHESTRATOR_GH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH=$(gh pr view ${{ github.event.client_payload.pr_number }} --json headRefName -q .headRefName)
+          echo "BRANCH=$BRANCH" >> $GITHUB_ENV
+
+      - name: Checkout PR Branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BRANCH }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install Project Dependencies
+        run: bun install
+
+      - name: Install Kilo Code CLI & Create Runner
+        run: |
+          npm install -g kilocode@latest
+          cat <<'EOF' > kilocode-runner.sh
+          #!/usr/bin/env bash
+          PROMPT="$1"
+          MODELS=("tencent/hy3:free" "qwen/qwen-2.5-coder-32b-instruct:free" "openrouter/free")
+          for MODEL in "${MODELS[@]}"; do
+            if kilocode run --model "$MODEL" "$PROMPT"; then
+              exit 0
+            fi
+          done
+          exit 1
+          EOF
+          chmod +x kilocode-runner.sh
+
+      - name: Fetch & Sanitize Vercel Build Logs
+        if: github.event.action == 'trigger-vercel-debugger'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          curl -s -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v13/deployments/${{ github.event.client_payload.deployment_id }}/builds" > raw_logs.json
+          
+          # Sanitize logs: Filter to keep only error traces to save context
+          jq -r '.[] | select(.type == "stderr" or (.text | contains("Error"))) | .text' raw_logs.json | tail -n 60 > clean_logs.txt || cat raw_logs.json > clean_logs.txt
+
+      - name: Run Kilo Code Fixer Agent
+        env:
+          KILOCODE_API_KEY: ${{ secrets.KILOCODE_API_KEY }}
+        run: |
+          if [ "${{ github.event.action }}" == "trigger-fixer" ]; then
+            ./kilocode-runner.sh \
+              "You are the Review Fixer Agent. Findings to fix: '${{ toJson(github.event.client_payload.findings) }}'. Fix valid findings."
+          else
+            ./kilocode-runner.sh \
+              "You are the Vercel Debugger Agent. Build Logs: $(cat clean_logs.txt). Fix the build/runtime errors."
+          fi
+
+      - name: Local Pre-Push Verification Loop
+        env:
+          KILOCODE_API_KEY: ${{ secrets.KILOCODE_API_KEY }}
+        run: |
+          MAX_RETRIES=3
+          COUNT=0
+          until bun run lint 2>&1 && bun x tsc --noEmit 2>&1; do
+            COUNT=$((COUNT+1))
+            if [ $COUNT -ge $MAX_RETRIES ]; then
+              echo "Local verification failed after $MAX_RETRIES attempts. Halting push."
+              exit 1
+            fi
+            BUILD_ERRORS=$((bun run lint && bun x tsc --noEmit) 2>&1 | tail -n 40)
+            ./kilocode-runner.sh \
+              "Local verification failed during pre-push gate: $BUILD_ERRORS. Fix the lint and TypeScript errors."
+          done
+
+      - name: Commit, Push & Reset Review Round
+        env:
+          GH_TOKEN: ${{ secrets.ORCHESTRATOR_GH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "kilocode-bot"
+          git config user.email "bot@kilocode.ai"
+          git add -A
+          if git diff --staged --quiet; then
+            echo "No code changes applied."
+            exit 0
+          fi
+          git commit -m "fix: autonomous fix applied [Kilo Code Bot]"
+          git pull --rebase origin "$BRANCH" || true
+          git push origin "$BRANCH"
+          NEW_SHA=$(git rev-parse HEAD)
+
+          node -e "
+          const { execSync } = require('child_process');
+          const prNumber = '${{ github.event.client_payload.pr_number }}';
+          const comments = JSON.parse(execSync(\`gh api repos/:owner/:repo/issues/\${prNumber}/comments\`));
+          const stateComment = comments.find(c => c.body.includes('<!-- ORCHESTRATOR_STATE:'));
+          if (stateComment) {
+            let state = JSON.parse(stateComment.body.match(/<!-- ORCHESTRATOR_STATE:\\s*({[\\s\\S]*?})\\s*-->/)[1]);
+            state.head_sha = '$NEW_SHA';
+            state.review_round += 1;
+            state.reviews.completed = {};
+            state.phase = 'WAITING_FOR_REVIEWS';
+            state.attempts.total_agent_runs += 1;
+            state.version = (state.version || 1) + 1;
+            
+            if (state.attempts.total_agent_runs >= state.attempts.max_limit) {
+              state.phase = 'NEEDS_HUMAN';
+              execSync(\`gh pr edit \${prNumber} --add-label needs-human-attention\`);
+            }
+            
+            const updated = \`<!-- ORCHESTRATOR_STATE:\\n\${JSON.stringify(state, null, 2)}\\n-->\\n🔄 **Fix Pushed:** Round \${state.review_round} initialized.\`;
+            execSync(\`gh api -X PATCH repos/:owner/:repo/issues/comments/\${stateComment.id} -f body=\"\${updated}\"\`);
+          }
+          "
