@@ -58,19 +58,22 @@ export async function saveSnapshot(
 }
 
 export async function getHistory(
-  accountId: string,
+  accountIds: string | string[],
   from: Date,
   to: Date,
 ): Promise<QuotaSnapshotRecord[]> {
   const supabase = await createServerClient();
 
+  const ids = Array.isArray(accountIds) ? accountIds : [accountIds];
+
   const { data, error } = await supabase
     .from("quota_snapshots")
     .select("*")
-    .eq("account_id", accountId)
+    .in("account_id", ids)
     .gte("timestamp", from.toISOString())
     .lte("timestamp", to.toISOString())
-    .order("timestamp", { ascending: true });
+    .order("timestamp", { ascending: true })
+    .limit(1000);
 
   if (error) {
     throw new Error(`Failed to fetch history: ${error.message}`);
@@ -100,7 +103,8 @@ export async function getModelHistory(
     .eq("model_id", modelId)
     .gte("snapshot.timestamp", from.toISOString())
     .lte("snapshot.timestamp", to.toISOString())
-    .order("timestamp", { foreignTable: "snapshot", ascending: true });
+    .order("timestamp", { foreignTable: "snapshot", ascending: true })
+    .limit(1000);
 
   if (error) {
     throw new Error(`Failed to fetch model history: ${error.message}`);

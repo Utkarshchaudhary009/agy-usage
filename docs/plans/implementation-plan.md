@@ -826,26 +826,26 @@ supabase/migrations/007_quota_history.sql
 **Feature**: Visual charts showing quota usage trends over time
 
 **Tasks**:
-- [ ] Install charting library: `recharts`
-- [ ] Build history page `src/app/(dashboard)/history/page.tsx`
-- [ ] Build quota burndown chart `src/components/charts/burndown-chart.tsx`:
+- [x] Install charting library: `recharts`
+- [x] Build history page `src/app/(dashboard)/history/page.tsx`
+- [x] Build quota burndown chart `src/components/charts/burndown-chart.tsx`:
   - Line chart showing remaining % over time for each model
   - Time range selector: 24h, 7d, 30d
   - Color-coded lines per model
-- [ ] Build prompt credits chart `src/components/charts/credits-chart.tsx`:
+- [x] Build prompt credits chart `src/components/charts/credits-chart.tsx`:
   - Area chart showing credits usage over time
   - Available vs used overlay
-- [ ] Build model comparison chart `src/components/charts/model-comparison.tsx`:
+- [x] Build model comparison chart `src/components/charts/model-comparison.tsx`:
   - Bar chart comparing current quota across all models
   - Group by provider (Claude vs Gemini)
-- [ ] Build account comparison chart `src/components/charts/account-comparison.tsx`:
+- [x] Build account comparison chart `src/components/charts/account-comparison.tsx`:
   - Side-by-side bars for each account's models
-- [ ] Create history API route `src/app/api/quota/history/route.ts`:
+- [x] Create history API route `src/app/api/quota/history/route.ts`:
   - `GET /api/quota/history?account=<id>&from=<iso>&to=<iso>&model=<id>`
   - Returns time-series data optimized for charts
   - Clerk auth + ownership verification
-- [ ] Add date range picker component
-- [ ] Add export as CSV/JSON button for raw data
+- [x] Add date range picker component
+- [x] Add export as CSV/JSON button for raw data
 
 **Deliverable**: Rich analytics dashboard with burndown charts, comparisons, and trend visualization.
 

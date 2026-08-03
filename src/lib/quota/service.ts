@@ -76,7 +76,7 @@ async function saveToCache(accountId: string, snapshot: QuotaSnapshot) {
 
   const { error } = await supabase.from("quota_cache").upsert({
     account_id: accountId,
-    snapshot: snapshot as any,
+    snapshot: snapshot as unknown as import("../types/database").Json,
     cached_at: new Date().toISOString(),
   });
 
@@ -91,7 +91,7 @@ export async function getQuota(
 ): Promise<QuotaSnapshot> {
   if (!forceRefresh) {
     const cached = await getCachedQuota(accountId);
-    if (cached && cached.fresh) {
+    if (cached?.fresh) {
       return cached.snapshot;
     }
   }
