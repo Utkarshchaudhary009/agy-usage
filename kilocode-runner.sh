@@ -4,10 +4,10 @@ set -u
 PROMPT="$1"
 
 MODELS=(
-  "kilo-auto/free"
-  "inclusionai/ling-3.0-flash:free"
-  "cohere/north-mini-code:free"
-  "tencent/hy3:free"
+  "kilo/tencent/hy3:free"
+  "kilo/inclusionai/ling-3.0-flash:free"
+  "kilo/cohere/north-mini-code:free"
+  "kilo/kilo-auto/free"
 )
 
 # Ensure npm's global bin directory is on PATH so the globally installed
