@@ -133,7 +133,7 @@ jobs:
           EOF
           )
 
-          gh pr comment "$PR_NUMBER" --body "$INITIAL_STATE"$'\n' "🤖 **Autonomous Orchestrator Initialized (Version 1).**"
+          gh pr comment "$PR_NUMBER" --body "$INITIAL_STATE"$'\n'"🤖 **Autonomous Orchestrator Initialized (Version 1).**"
 
       - name: Generate GitHub Step Summary
         run: |
