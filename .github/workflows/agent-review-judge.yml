@@ -16,7 +16,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Kilo Code CLI
-        run: npm install -g kilocode@latest
+        run: npm install -g @kilocode/cli@latest
 
       - name: Create Model Fallback Runner
         run: |

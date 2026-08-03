@@ -37,7 +37,7 @@ jobs:
         run: bun install
 
       - name: Install Kilo Code CLI
-        run: npm install -g kilocode@latest
+        run: npm install -g @kilocode/cli@latest
 
       - name: Create Feature Branch
         run: |

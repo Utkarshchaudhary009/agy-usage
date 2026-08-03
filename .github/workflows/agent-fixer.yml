@@ -34,7 +34,7 @@ jobs:
 
       - name: Install Kilo Code CLI & Create Runner
         run: |
-          npm install -g kilocode@latest
+          npm install -g @kilocode/cli@latest
           cat <<'EOF' > kilocode-runner.sh
           #!/usr/bin/env bash
           PROMPT="$1"
