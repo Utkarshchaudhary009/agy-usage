@@ -52,9 +52,9 @@ jobs:
           TASK_INPUT="${{ inputs.task }}"
           
           if [ -z "$TASK_INPUT" ]; then
-            PROMPT="Your task is to start the next phase of the project."
+            PROMPT="You are implementing the Wakeup feature for this Next.js dashboard. Create the file src/lib/wakeup/cooldown.ts that exports two pure TypeScript functions: (1) isInCooldown(lastTriggeredAt: string | null, cooldownMs: number): boolean — returns true when (Date.now() - new Date(lastTriggeredAt).getTime()) < cooldownMs, and false when lastTriggeredAt is null; (2) remainingCooldownMs(lastTriggeredAt: string | null, cooldownMs: number): number — returns Math.max(0, cooldownMs - (Date.now() - new Date(lastTriggeredAt).getTime())), or 0 when lastTriggeredAt is null. Add 'import \"server-only\";' as the first line. Then run 'bun run lint' and 'bun x tsc --noEmit' and fix every error. Finally, check off the corresponding task in docs/plans/implementation-plan.md. Make the actual file edit — produce a real, compiling file, not just a description. Do NOT run bun build or bun dev."
           else
-            PROMPT="Your task is to implement the following specific request: $TASK_INPUT."
+            PROMPT="Your task is to implement the following specific request: $TASK_INPUT. Make real file edits, run 'bun run lint' and 'bun x tsc --noEmit' and fix all errors, and check off any completed tasks in docs/plans/implementation-plan.md. Do NOT run bun build or bun dev."
           fi
           
           ./kilocode-runner.sh "$PROMPT"
