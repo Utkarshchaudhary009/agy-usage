@@ -39,25 +39,6 @@ jobs:
       - name: Install Kilo Code CLI
         run: npm install -g kilocode@latest
 
-      - name: Create Model Fallback Runner Script
-        run: |
-          cat <<'EOF' > kilocode-runner.sh
-          #!/usr/bin/env bash
-          PROMPT="$1"
-          MODELS=("tencent/hy3:free" "qwen/qwen-2.5-coder-32b-instruct:free" "openrouter/free")
-          for MODEL in "${MODELS[@]}"; do
-            echo "Attempting execution with model: $MODEL..."
-            if kilocode run --model "$MODEL" "$PROMPT"; then
-              echo "Task succeeded with $MODEL"
-              exit 0
-            fi
-            echo "Model $MODEL failed or rate-limited. Trying next fallback..."
-          done
-          echo "All model fallbacks failed."
-          exit 1
-          EOF
-          chmod +x kilocode-runner.sh
-
       - name: Create Feature Branch
         run: |
           BRANCH_NAME="feature/task-$(date +%s)"
@@ -67,8 +48,6 @@ jobs:
           echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
 
       - name: Run Kilo Code Builder Agent
-        env:
-          KILOCODE_API_KEY: ${{ secrets.KILOCODE_API_KEY }}
         run: |
           TASK_INPUT="${{ inputs.task }}"
           
@@ -81,8 +60,6 @@ jobs:
           ./kilocode-runner.sh "$PROMPT"
 
       - name: Local Pre-Push Verification Loop
-        env:
-          KILOCODE_API_KEY: ${{ secrets.KILOCODE_API_KEY }}
         run: |
           MAX_RETRIES=3
           COUNT=0

@@ -60,8 +60,6 @@ jobs:
           jq -r '.[] | select(.type == "stderr" or (.text | contains("Error"))) | .text' raw_logs.json | tail -n 60 > clean_logs.txt || cat raw_logs.json > clean_logs.txt
 
       - name: Run Kilo Code Fixer Agent
-        env:
-          KILOCODE_API_KEY: ${{ secrets.KILOCODE_API_KEY }}
         run: |
           if [ "${{ github.event.action }}" == "trigger-fixer" ]; then
             ./kilocode-runner.sh \
@@ -72,8 +70,6 @@ jobs:
           fi
 
       - name: Local Pre-Push Verification Loop
-        env:
-          KILOCODE_API_KEY: ${{ secrets.KILOCODE_API_KEY }}
         run: |
           MAX_RETRIES=3
           COUNT=0

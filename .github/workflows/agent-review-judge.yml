@@ -40,8 +40,6 @@ jobs:
           gh pr view ${{ github.event.client_payload.pr_number }} --json reviews,comments > pr_reviews.json
 
       - name: Run Kilo Code Judge
-        env:
-          KILOCODE_API_KEY: ${{ secrets.KILOCODE_API_KEY }}
         run: |
           ./kilocode-runner.sh \
             "You are the Review Judge Agent.
