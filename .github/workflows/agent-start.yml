@@ -112,7 +112,7 @@ jobs:
             "phase": "WAITING_FOR_REVIEWS",
             "review_round": 1,
             "reviews": {
-              "required": ["review-agent-a", "review-agent-b"],
+              "required": ["coderabbitai", "cubic-dev-ai", "sourcery-ai"],
               "completed": {}
             },
             "deployment": {
