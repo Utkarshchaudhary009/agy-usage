@@ -29,7 +29,7 @@ fi
 
 for MODEL in "${MODELS[@]}"; do
   echo "Attempting execution with model: $MODEL..."
-  if $KCMD run --model "$MODEL" "$PROMPT"; then
+  if $KCMD run --auto --model "$MODEL" "$PROMPT"; then
     echo "Task succeeded with $MODEL"
     exit 0
   fi

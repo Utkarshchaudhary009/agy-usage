@@ -63,12 +63,18 @@ jobs:
         run: |
           MAX_RETRIES=3
           COUNT=0
+          # Auto-fix formatting/lint issues that Biome can resolve
+          bun run format
+          bun run lint --write || true
           until bun run lint 2>&1 && bun x tsc --noEmit 2>&1; do
             COUNT=$((COUNT+1))
             if [ $COUNT -ge $MAX_RETRIES ]; then
               echo "Local verification failed after $MAX_RETRIES attempts. Halting push."
               exit 1
             fi
+            # Try Biome auto-fix again before re-prompting the agent
+            bun run format
+            bun run lint --write || true
             BUILD_ERRORS=$((bun run lint && bun x tsc --noEmit) 2>&1 | tail -n 40)
             ./kilocode-runner.sh \
               "Local verification failed during pre-push gate: $BUILD_ERRORS. Fix the lint and TypeScript errors."
