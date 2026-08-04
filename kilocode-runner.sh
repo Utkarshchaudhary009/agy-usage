@@ -2,6 +2,7 @@
 set -u
 
 PROMPT="$1"
+TIMEOUT="${2:-600}"
 
 MODELS=(
   "kilo/tencent/hy3:free"
@@ -28,8 +29,8 @@ else
 fi
 
 for MODEL in "${MODELS[@]}"; do
-  echo "Attempting execution with model: $MODEL..."
-  if $KCMD run --auto --model "$MODEL" "$PROMPT"; then
+  echo "Attempting execution with model: $MODEL (timeout: ${TIMEOUT}s)..."
+  if $KCMD run --auto --timeout "$TIMEOUT" --model "$MODEL" "$PROMPT"; then
     echo "Task succeeded with $MODEL"
     exit 0
   fi

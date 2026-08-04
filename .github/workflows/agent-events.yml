@@ -1,0 +1,125 @@
+name: "2. Event Listeners (Reviews + Deployments)"
+
+on:
+  pull_request_review:
+    types: [submitted]
+  deployment_status:
+
+jobs:
+  # ── Review Event ──────────────────────────────────────────────
+  review:
+    if: github.event_name == 'pull_request_review'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - name: Track Review & Advance State
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const review = context.payload.review;
+            const pr = context.payload.pull_request;
+            const reviewer = review.user.login;
+            const eventId = `review_${review.id}`;
+
+            let retries = 3;
+            while (retries-- > 0) {
+              const { data: comments } = await github.rest.issues.listComments({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: pr.number
+              });
+              const sc = comments.find(c => c.body.includes('<!-- ORCHESTRATOR_STATE:'));
+              if (!sc) return;
+
+              const state = JSON.parse(sc.body.match(/<!-- ORCHESTRATOR_STATE:\s*({[\s\S]*?})\s*-->/)[1]);
+              if (state.processed_event_ids.includes(eventId)) return;
+              if (pr.head.sha !== state.head_sha) return;
+
+              if (state.reviews.required.includes(reviewer)) {
+                state.reviews.completed[reviewer] = { state: review.state, timestamp: new Date().toISOString() };
+                state.processed_event_ids.push(eventId);
+              }
+
+              const allDone = state.reviews.required.every(r => r in state.reviews.completed);
+              if (allDone && state.phase === 'WAITING_FOR_REVIEWS') state.phase = 'JUDGING_REVIEWS';
+              state.version = (state.version || 1) + 1;
+
+              try {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  comment_id: sc.id,
+                  body: `<!-- ORCHESTRATOR_STATE:\n${JSON.stringify(state, null, 2)}\n-->\nReview Tracked: \`${reviewer}\` submitted \`${review.state}\` (v${state.version}).`
+                });
+                if (allDone) {
+                  await github.rest.repos.createDispatchEvent({
+                    owner: context.repo.owner, repo: context.repo.repo,
+                    event_type: 'trigger-review-judge',
+                    client_payload: { pr_number: pr.number, head_sha: pr.head.sha }
+                  });
+                }
+                return;
+              } catch {
+                await new Promise(r => setTimeout(r, 1000));
+              }
+            }
+
+  # ── Deployment Event ──────────────────────────────────────────
+  deployment:
+    if: github.event_name == 'deployment_status'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: write
+    steps:
+      - name: Track Deployment & Advance State
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = context.payload.deployment_status;
+            const deployment = context.payload.deployment;
+            const sha = deployment.sha;
+            const eventId = `dpl_${status.id}_${status.state}`;
+
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner, repo: context.repo.repo, state: 'open'
+            });
+            const pr = prs.find(p => p.head.sha === sha);
+            if (!pr) return;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: pr.number
+            });
+            const sc = comments.find(c => c.body.includes('<!-- ORCHESTRATOR_STATE:'));
+            if (!sc) return;
+
+            const state = JSON.parse(sc.body.match(/<!-- ORCHESTRATOR_STATE:\s*({[\s\S]*?})\s*-->/)[1]);
+            if (state.processed_event_ids.includes(eventId)) return;
+            state.processed_event_ids.push(eventId);
+
+            state.deployment = { status: status.state, sha, id: deployment.id };
+
+            if (status.state === 'success') {
+              state.gates.deployment_passed = true;
+              await github.rest.repos.createDispatchEvent({
+                owner: context.repo.owner, repo: context.repo.repo,
+                event_type: 'check-merge-gate',
+                client_payload: { pr_number: pr.number }
+              });
+            } else if (['failure', 'error'].includes(status.state)) {
+              state.gates.deployment_passed = false;
+              state.phase = 'FIXING_DEPLOYMENT';
+              await github.rest.repos.createDispatchEvent({
+                owner: context.repo.owner, repo: context.repo.repo,
+                event_type: 'trigger-vercel-debugger',
+                client_payload: { pr_number: pr.number, deployment_id: deployment.id }
+              });
+            }
+
+            state.version = (state.version || 1) + 1;
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              comment_id: sc.id,
+              body: `<!-- ORCHESTRATOR_STATE:\n${JSON.stringify(state, null, 2)}\n-->\nVercel Status: \`${status.state}\``
+            });

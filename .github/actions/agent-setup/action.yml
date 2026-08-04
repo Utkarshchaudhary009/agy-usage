@@ -1,0 +1,25 @@
+name: "Agent Setup"
+description: "Shared setup: Bun, project deps, Kilo Code CLI"
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "26.6.0"
+
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v1
+      with:
+        bun-version: latest
+
+    - name: Install Project Dependencies
+      shell: bash
+      run: bun install
+
+    - name: Install Kilo Code CLI
+      shell: bash
+      run: |
+        npm install -g @kilocode/cli@latest
+        chmod +x kilocode-runner.sh
