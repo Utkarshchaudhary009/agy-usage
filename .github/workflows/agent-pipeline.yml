@@ -115,9 +115,12 @@ jobs:
           jq -r '.[] | select(.type == "stderr" or (.text | contains("Error"))) | .text' raw_logs.json | tail -n 60 > clean_logs.txt || cat raw_logs.json > clean_logs.txt
 
       - name: Run Fixer Agent (self-verifying)
+        env:
+          FINDINGS_JSON: ${{ toJson(github.event.client_payload.findings) }}
         run: |
           if [ "${{ github.event.action }}" == "trigger-fixer" ]; then
-            ./kilocode-runner.sh "Fix these review findings: ${{ toJson(github.event.client_payload.findings) }}. Follow AGENTS.md Step 3 (Verify) after fixing. Do NOT run git or gh commands — the workflow handles version control."
+            echo "$FINDINGS_JSON" > findings_input.json
+            ./kilocode-runner.sh "Fix these review findings (see findings_input.json): $(cat findings_input.json). Follow AGENTS.md Step 3 (Verify) after fixing. Do NOT run git or gh commands — the workflow handles version control."
           else
             ./kilocode-runner.sh "Fix these Vercel build errors: $(cat clean_logs.txt). Follow AGENTS.md Step 3 (Verify) after fixing. Do NOT run git or gh commands — the workflow handles version control."
           fi
