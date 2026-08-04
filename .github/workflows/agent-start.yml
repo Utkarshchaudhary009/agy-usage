@@ -52,9 +52,9 @@ jobs:
           TASK_INPUT="${{ inputs.task }}"
           
           if [ -z "$TASK_INPUT" ]; then
-            PROMPT="You are implementing the Wakeup feature for this Next.js dashboard. Create the file src/lib/wakeup/cooldown.ts that exports two pure TypeScript functions: (1) isInCooldown(lastTriggeredAt: string | null, cooldownMs: number): boolean — returns true when (Date.now() - new Date(lastTriggeredAt).getTime()) < cooldownMs, and false when lastTriggeredAt is null; (2) remainingCooldownMs(lastTriggeredAt: string | null, cooldownMs: number): number — returns Math.max(0, cooldownMs - (Date.now() - new Date(lastTriggeredAt).getTime())), or 0 when lastTriggeredAt is null. Add 'import \"server-only\";' as the first line. Then run 'bun run lint' and 'bun x tsc --noEmit' and fix every error. Finally, check off the corresponding task in docs/plans/implementation-plan.md. Make the actual file edit — produce a real, compiling file, not just a description. Do NOT run bun build or bun dev."
+            PROMPT="You are implementing the Wakeup feature for this Next.js dashboard. Create the file src/lib/wakeup/cooldown.ts that exports two pure TypeScript functions: (1) isInCooldown(lastTriggeredAt: string | null, cooldownMs: number): boolean — returns true when (Date.now() - new Date(lastTriggeredAt).getTime()) < cooldownMs, and false when lastTriggeredAt is null; (2) remainingCooldownMs(lastTriggeredAt: string | null, cooldownMs: number): number — returns Math.max(0, cooldownMs - (Date.now() - new Date(lastTriggeredAt).getTime())), or 0 when lastTriggeredAt is null. Add 'import \"server-only\";' as the first line. Then run 'bun run lint' and 'bun x tsc --noEmit' and fix every error. Finally, check off the corresponding task in docs/plans/implementation-plan.md. Make the actual file edit — produce a real, compiling file, not just a description. Do NOT run bun build or bun dev. Do not run git commit, git push, or gh commands yourself — the workflow handles version control and PR creation."
           else
-            PROMPT="Your task is to implement the following specific request: $TASK_INPUT. Make real file edits, run 'bun run lint' and 'bun x tsc --noEmit' and fix all errors, and check off any completed tasks in docs/plans/implementation-plan.md. Do NOT run bun build or bun dev."
+            PROMPT="Your task is to implement the following specific request: $TASK_INPUT. Make real file edits, run 'bun run lint' and 'bun x tsc --noEmit' and fix all errors, and check off any completed tasks in docs/plans/implementation-plan.md. Do NOT run bun build or bun dev. Do not run git commit, git push, or gh commands yourself — the workflow handles version control and PR creation."
           fi
           
           ./kilocode-runner.sh "$PROMPT"
@@ -80,28 +80,36 @@ jobs:
               "The previous code changes failed local linting or type-checking: $BUILD_ERRORS. Fix all local errors."
           done
 
+      - name: Generate PR Metadata with Kilo Code
+        run: |
+          ./kilocode-runner.sh "You are a release-notes writer for this project. Inspect the changes with 'git --no-pager diff HEAD' and 'git status --short'. Based strictly on the actual diff, write three files (do NOT use gh or git commit yourself): pr_title.txt — a single concise Conventional Commits style line (e.g. 'feat: add wakeup cooldown checker'), no surrounding quotes; pr_body.md — a clear markdown PR description of what changed and why, plus notes for reviewers; commit_msg.txt — a Conventional Commits message (subject, blank line, optional short body)."
+
       - name: Commit & Push Branch
         run: |
           git add -A
+          git restore --staged pr_title.txt pr_body.md commit_msg.txt 2>/dev/null || true
           if git diff --staged --quiet; then
             echo "No changes made by agent."
             exit 1
           fi
-          TASK_DESC="${{ inputs.task }}"
-          git commit -m "feat: ${TASK_DESC:-Autonomous Next Phase} [Kilo Code Bot]"
+          if [ -f commit_msg.txt ]; then
+            git commit -F commit_msg.txt
+          else
+            git commit -m "feat: Autonomous Next Phase [Kilo Code Bot]"
+          fi
           git pull --rebase origin "$BRANCH_NAME" || true
           git push origin "$BRANCH_NAME"
+          rm -f pr_title.txt pr_body.md commit_msg.txt 2>/dev/null || true
 
       - name: Create Pull Request & Initialize Optimistic State
         env:
           GH_TOKEN: ${{ secrets.ORCHESTRATOR_GH_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          TASK_DESC="${{ inputs.task }}"
-          PR_URL=$(gh pr create \
-            --title "feat: ${TASK_DESC:-Autonomous Next Phase}" \
-            --body "Autonomous PR created by Kilo Code Builder Agent." \
-            --head "$BRANCH_NAME" \
-            --base "main")
+          if [ -f pr_title.txt ] && [ -f pr_body.md ]; then
+            PR_URL=$(gh pr create --title "$(cat pr_title.txt)" --body-file pr_body.md --head "$BRANCH_NAME" --base "main")
+          else
+            PR_URL=$(gh pr create --title "Autonomous Next Phase" --body "Autonomous PR created by Kilo Code Builder Agent." --head "$BRANCH_NAME" --base "main")
+          fi
           
           PR_NUMBER=$(echo "$PR_URL" | awk -F'/' '{print $NF}')
           HEAD_SHA=$(git rev-parse HEAD)
@@ -118,7 +126,8 @@ jobs:
             "review_round": 1,
             "reviews": {
               "required": ["coderabbitai", "cubic-dev-ai", "sourcery-ai"],
-              "completed": {}
+              "completed": {},
+              "post_fix_rounds": 0
             },
             "deployment": {
               "status": "pending",

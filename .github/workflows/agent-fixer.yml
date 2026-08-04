@@ -53,10 +53,10 @@ jobs:
         run: |
           if [ "${{ github.event.action }}" == "trigger-fixer" ]; then
             ./kilocode-runner.sh \
-              "You are the Review Fixer Agent. Findings to fix: '${{ toJson(github.event.client_payload.findings) }}'. Fix valid findings."
+              "You are the Review Fixer Agent. Findings to fix: '${{ toJson(github.event.client_payload.findings) }}'. Fix valid findings. Do not run git commit, git push, or gh commands yourself — the workflow handles version control."
           else
             ./kilocode-runner.sh \
-              "You are the Vercel Debugger Agent. Build Logs: $(cat clean_logs.txt). Fix the build/runtime errors."
+              "You are the Vercel Debugger Agent. Build Logs: $(cat clean_logs.txt). Fix the build/runtime errors. Do not run git commit, git push, or gh commands yourself — the workflow handles version control."
           fi
 
       - name: Local Pre-Push Verification Loop
@@ -80,7 +80,7 @@ jobs:
               "Local verification failed during pre-push gate: $BUILD_ERRORS. Fix the lint and TypeScript errors."
           done
 
-      - name: Commit, Push & Reset Review Round
+      - name: Commit, Push & Update State
         env:
           GH_TOKEN: ${{ secrets.ORCHESTRATOR_GH_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
@@ -94,28 +94,55 @@ jobs:
           git commit -m "fix: autonomous fix applied [Kilo Code Bot]"
           git pull --rebase origin "$BRANCH" || true
           git push origin "$BRANCH"
-          NEW_SHA=$(git rev-parse HEAD)
+          echo "NEW_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
 
-          node -e "
-          const { execSync } = require('child_process');
-          const prNumber = '${{ github.event.client_payload.pr_number }}';
-          const comments = JSON.parse(execSync(\`gh api repos/:owner/:repo/issues/\${prNumber}/comments\`));
-          const stateComment = comments.find(c => c.body.includes('<!-- ORCHESTRATOR_STATE:'));
-          if (stateComment) {
-            let state = JSON.parse(stateComment.body.match(/<!-- ORCHESTRATOR_STATE:\\s*({[\\s\\S]*?})\\s*-->/)[1]);
-            state.head_sha = '$NEW_SHA';
+      - name: Re-verify Fix (post-fix judge)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = context.payload.client_payload.pr_number;
+            const newSha = process.env.NEW_SHA;
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber
+            });
+            const stateComment = comments.data.find(c => c.body.includes('<!-- ORCHESTRATOR_STATE:'));
+            let state = JSON.parse(stateComment.body.match(/<!-- ORCHESTRATOR_STATE:\s*({[\s\S]*?})\s*-->/)[1]);
+
+            state.head_sha = newSha;
             state.review_round += 1;
             state.reviews.completed = {};
-            state.phase = 'WAITING_FOR_REVIEWS';
+            state.reviews.post_fix_rounds = (state.reviews.post_fix_rounds || 0) + 1;
             state.attempts.total_agent_runs += 1;
             state.version = (state.version || 1) + 1;
-            
+
+            let nextEvent = null;
             if (state.attempts.total_agent_runs >= state.attempts.max_limit) {
               state.phase = 'NEEDS_HUMAN';
-              execSync(\`gh pr edit \${prNumber} --add-label needs-human-attention\`);
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: '⚠️ Max agent runs reached. Escalating to human.'
+              });
+            } else {
+              state.phase = 'VERIFYING_FIX';
+              nextEvent = 'trigger-review-judge';
             }
-            
-            const updated = \`<!-- ORCHESTRATOR_STATE:\\n\${JSON.stringify(state, null, 2)}\\n-->\\n🔄 **Fix Pushed:** Round \${state.review_round} initialized.\`;
-            execSync(\`gh api -X PATCH repos/:owner/:repo/issues/comments/\${stateComment.id} -f body=\"\${updated}\"\`);
-          }
-          "
+
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: stateComment.id,
+              body: `<!-- ORCHESTRATOR_STATE:\n${JSON.stringify(state, null, 2)}\n-->\n🔄 **Fix Pushed (round ${state.review_round}):** Re-verifying (post-fix round ${state.reviews.post_fix_rounds}/2).`
+            });
+
+            if (nextEvent) {
+              await github.rest.repos.createDispatchEvent({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                event_type: nextEvent,
+                client_payload: { pr_number: prNumber, head_sha: newSha, post_fix: true }
+              });
+            }

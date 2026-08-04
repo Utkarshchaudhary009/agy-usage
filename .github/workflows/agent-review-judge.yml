@@ -12,8 +12,10 @@ jobs:
       pull-requests: write
 
     steps:
-      - name: Checkout Code
+      - name: Checkout PR Branch
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.client_payload.head_sha }}
 
       - name: Install Kilo Code CLI
         run: |
@@ -21,6 +23,7 @@ jobs:
           chmod +x kilocode-runner.sh
 
       - name: Fetch PR Reviews
+        if: ${{ github.event.client_payload.post_fix != true }}
         env:
           GH_TOKEN: ${{ secrets.ORCHESTRATOR_GH_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
@@ -28,12 +31,12 @@ jobs:
 
       - name: Run Kilo Code Judge
         run: |
-          ./kilocode-runner.sh \
-            "You are the Review Judge Agent.
-             PR Reviews: $(cat pr_reviews.json)
-             Analyze all submitted reviews. Filter out duplicates and false positives.
-             Output JSON in a block to 'findings.json':
-             { \"status\": \"changes_required\" | \"approved\", \"findings\": [ { \"file\": \"...\", \"problem\": \"...\", \"action\": \"...\" } ] }"
+          if [ "${{ github.event.client_payload.post_fix }}" == "true" ]; then
+            PROMPT="You are the Review Judge Agent performing a POST-FIX verification. Do a FRESH code review of the current changes in this repository (review the modified files, or run 'git --no-pager diff origin/main...HEAD'). Do NOT rely on any previous review comments. Verify whether the previously reported issues are now resolved and that no new blocking issues were introduced. Output JSON in a block to 'findings.json': { \"status\": \"changes_required\" | \"approved\", \"findings\": [ { \"file\": \"...\", \"problem\": \"...\", \"action\": \"...\" } ] }. If everything looks correct, set status to \"approved\" with an empty findings array."
+          else
+            PROMPT="You are the Review Judge Agent. PR Reviews: $(cat pr_reviews.json). Analyze all submitted reviews. Filter out duplicates and false positives. Output JSON in a block to 'findings.json': { \"status\": \"changes_required\" | \"approved\", \"findings\": [ { \"file\": \"...\", \"problem\": \"...\", \"action\": \"...\" } ] }"
+          fi
+          ./kilocode-runner.sh "$PROMPT"
 
       - name: Parse Judge Output with Fallback & Update State
         uses: actions/github-script@v7
@@ -41,9 +44,8 @@ jobs:
           script: |
             const fs = require('fs');
             const prNumber = context.payload.client_payload.pr_number;
+            const isPostFix = context.payload.client_payload.post_fix === true;
             let judgeResult = { status: "approved", findings: [] };
-
-            // Robust JSON Extractor (Handles markdown wrapper noise)
             if (fs.existsSync('findings.json')) {
               try {
                 const raw = fs.readFileSync('findings.json', 'utf8');
@@ -59,11 +61,14 @@ jobs:
               repo: context.repo.repo,
               issue_number: prNumber
             });
-
             const stateComment = comments.data.find(c => c.body.includes('<!-- ORCHESTRATOR_STATE:'));
             let state = JSON.parse(stateComment.body.match(/<!-- ORCHESTRATOR_STATE:\s*({[\s\S]*?})\s*-->/)[1]);
 
-            if (judgeResult.status === 'changes_required' && judgeResult.findings.length > 0) {
+            const postFixRounds = (state.reviews.post_fix_rounds || 0);
+            const changesRequired = judgeResult.status === 'changes_required' && judgeResult.findings.length > 0;
+
+            if (changesRequired && !(isPostFix && postFixRounds >= 2)) {
+              // More fixes needed (and we haven't exhausted the 2 post-fix rounds)
               state.phase = 'FIXING_REVIEWS';
               await github.rest.repos.createDispatchEvent({
                 owner: context.repo.owner,
@@ -72,6 +77,10 @@ jobs:
                 client_payload: { pr_number: prNumber, findings: judgeResult.findings }
               });
             } else {
+              if (changesRequired && isPostFix && postFixRounds >= 2) {
+                console.log("Post-fix verification exhausted (2 rounds). Accepting and proceeding to merge gate.");
+              }
+              // Approved (or we gave it 2 chances post-fix) -> reviews pass, move to merge gate
               state.phase = 'REVIEWS_APPROVED';
               state.gates.reviews_passed = true;
               await github.rest.repos.createDispatchEvent({
@@ -87,5 +96,5 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               comment_id: stateComment.id,
-              body: `<!-- ORCHESTRATOR_STATE:\n${JSON.stringify(state, null, 2)}\n-->\n⚖️ **Review Judge Decision:** \`${judgeResult.status}\``
+              body: `<!-- ORCHESTRATOR_STATE:\n${JSON.stringify(state, null, 2)}\n-->\n⚖️ **Review Judge Decision:** \`${judgeResult.status}\`${isPostFix ? ' (post-fix verification round ' + postFixRounds + '/2)' : ''}`
             });
