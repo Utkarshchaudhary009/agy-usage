@@ -29,3 +29,9 @@ runs:
       run: |
         git config user.name "kilocode-bot"
         git config user.email "bot@kilocode.ai"
+
+    - name: Load CI AGENTS.md
+      shell: bash
+      run: |
+        cp .github/AGENTS.ci.md AGENTS.md
+        git update-index --skip-worktree AGENTS.md

@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+# [Husky] pre-push: typecheck before push
+
+echo "[husky] Running TypeScript type check..."
+npx tsc --noEmit
+if [ $? -ne 0 ]; then
+  echo "[husky] TypeScript errors found. Fix them before pushing."
+  exit 1
+fi
+echo "[husky] Type check passed."

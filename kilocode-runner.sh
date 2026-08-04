@@ -3,6 +3,11 @@ set -u
 
 PROMPT="$1"
 
+IDENTITY="You are Autonomous Kilobot — a senior-level software engineer at Google running in GitHub Actions CI. You have full autonomy to make decisions and write production-quality code. Read AGENTS.md before starting."
+FULL_PROMPT="$IDENTITY
+
+$PROMPT"
+
 MODELS=(
   "kilo/tencent/hy3:free"
   "kilo/inclusionai/ling-3.0-flash:free"
@@ -29,7 +34,7 @@ fi
 
 for MODEL in "${MODELS[@]}"; do
   echo "Attempting execution with model: $MODEL..."
-  if $KCMD run --auto --model "$MODEL" "$PROMPT"; then
+  if $KCMD run --auto --model "$MODEL" "$FULL_PROMPT"; then
     echo "Task succeeded with $MODEL"
     exit 0
   fi

@@ -43,7 +43,7 @@ jobs:
               }
 
               const allDone = state.reviews.required.every(r => r in state.reviews.completed);
-              if (allDone && state.phase === 'WAITING_FOR_REVIEWS') state.phase = 'JUDGING_REVIEWS';
+              if (allDone && state.phase === 'WAITING_FOR_REVIEWS') state.phase = 'FIXING_REVIEWS';
               state.version = (state.version || 1) + 1;
 
               try {
@@ -55,7 +55,7 @@ jobs:
                 if (allDone) {
                   await github.rest.repos.createDispatchEvent({
                     owner: context.repo.owner, repo: context.repo.repo,
-                    event_type: 'trigger-review-judge',
+                    event_type: 'trigger-fixer',
                     client_payload: { pr_number: pr.number, head_sha: pr.head.sha }
                   });
                 }

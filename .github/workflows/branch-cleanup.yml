@@ -1,0 +1,38 @@
+name: "4. Cleanup (Delete Closed/Merged PR Branches)"
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  delete-branch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Delete Head Branch
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const head = context.payload.pull_request.head.ref;
+            if (head === 'main') {
+              console.log('Skipping protected branch:', head);
+              return;
+            }
+            const { data: open } = await github.rest.pulls.list({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', head: `${context.repo.owner}:${head}`
+            });
+            if (open.length > 0) {
+              console.log(`Skipping ${head}: ${open.length} open PR(s) still using it.`);
+              return;
+            }
+            try {
+              await github.rest.git.deleteRef({
+                owner: context.repo.owner, repo: context.repo.repo,
+                ref: `heads/${head}`
+              });
+              console.log(`Deleted branch ${head}`);
+            } catch (e) {
+              console.log(`Could not delete ${head}: ${e.message}`);
+            }
