@@ -6,9 +6,13 @@ on:
   workflow_dispatch:
     inputs:
       task:
-        description: "Coding task for Kilo Code (blank = next phase)"
+        description: "Coding task (blank = Start the Next Phase)"
         required: false
         type: string
+
+concurrency:
+  group: agent-build
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -24,51 +28,40 @@ jobs:
 
       - uses: ./.github/actions/agent-setup
 
-      - name: Create Feature Branch
-        run: |
-          BRANCH_NAME="feature/task-$(date +%s)"
-          git config user.name "kilocode-bot"
-          git config user.email "bot@kilocode.ai"
-          git checkout -b "$BRANCH_NAME"
-          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
-
-      - name: Run Builder Agent (build, verify, commit, PR)
+      - name: Run Builder Agent
         env:
           GH_TOKEN: ${{ secrets.ORCHESTRATOR_GH_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          TASK_INPUT="${{ inputs.task }}"
-          GIT_SUFFIX="After all checks pass, do the following in order: (1) run 'git add -A', (2) commit with a Conventional Commits message, (3) run 'git pull --rebase origin $BRANCH_NAME || true', (4) run 'git push origin $BRANCH_NAME', (5) run 'gh pr create --head $BRANCH_NAME --base main' with a descriptive title and body, (6) write ONLY the PR URL (e.g. https://github.com/owner/repo/pull/123) to a file called 'pr_url.txt'."
-          VERIFY_SUFFIX="After making all code changes, self-verify: run 'bun run format', 'bun run lint --write', 'bun run lint', 'bun x tsc --noEmit'. If any fail, fix and re-run until ALL pass clean. Do NOT run bun build or bun dev. $GIT_SUFFIX"
-
-          if [ -z "$TASK_INPUT" ]; then
-            PROMPT="You are implementing the Wakeup feature for this Next.js dashboard. Create the file src/lib/wakeup/cooldown.ts that exports two pure TypeScript functions: (1) isInCooldown(lastTriggeredAt: string | null, cooldownMs: number): boolean — returns true when (Date.now() - new Date(lastTriggeredAt).getTime()) < cooldownMs, and false when lastTriggeredAt is null; (2) remainingCooldownMs(lastTriggeredAt: string | null, cooldownMs: number): number — returns Math.max(0, cooldownMs - (Date.now() - new Date(lastTriggeredAt).getTime())), or 0 when lastTriggeredAt is null. Add 'import \"server-only\";' as the first line. Check off the corresponding task in docs/plans/implementation-plan.md. $VERIFY_SUFFIX"
-          else
-            PROMPT="Your task: $TASK_INPUT. Make real file edits and check off any completed tasks in docs/plans/implementation-plan.md. $VERIFY_SUFFIX"
+          TASK="${{ inputs.task }}"
+          if [ -z "$TASK" ]; then
+            TASK="Start the Next Phase"
           fi
-          ./kilocode-runner.sh "$PROMPT"
+          ./kilocode-runner.sh "$TASK. Follow AGENTS.md exactly — create branch, write code, verify (Step 3), self-review (Step 4), then commit and create the PR (Step 5). After running 'gh pr create', write ONLY the PR URL to a file called 'pr_url.txt'."
 
       - name: Initialize Orchestrator State
         env:
           GH_TOKEN: ${{ secrets.ORCHESTRATOR_GH_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           if [ ! -f pr_url.txt ]; then
-            echo "Agent did not create a PR. Falling back."
+            echo "Agent did not produce pr_url.txt. Falling back."
+            BRANCH=$(git branch --show-current)
             git add -A
-            if git diff --staged --quiet; then echo "No changes." && exit 1; fi
-            git commit -m "feat: autonomous next phase [Kilo Code Bot]"
-            git push origin "$BRANCH_NAME"
-            PR_URL=$(gh pr create --head "$BRANCH_NAME" --base main --title "Autonomous Next Phase" --body "Autonomous PR by Kilo Code Bot.")
+            if git diff --staged --quiet; then echo "No changes to commit." && exit 1; fi
+            git commit -m "feat: autonomous next phase [kilocode-bot]"
+            git push origin "$BRANCH"
+            PR_URL=$(gh pr create --head "$BRANCH" --base main --title "Autonomous Next Phase" --body "Autonomous PR by kilocode-bot.")
           else
-            PR_URL=$(cat pr_url.txt)
+            PR_URL=$(cat pr_url.txt | tr -d '[:space:]')
           fi
 
           PR_NUMBER=$(echo "$PR_URL" | awk -F'/' '{print $NF}')
           HEAD_SHA=$(git rev-parse HEAD)
+          BRANCH=$(git branch --show-current)
 
           gh pr comment "$PR_NUMBER" --body "<!-- ORCHESTRATOR_STATE:
           {
             \"version\": 1, \"run_id\": \"task-$(date +%s)\",
-            \"pr_number\": $PR_NUMBER, \"head_sha\": \"$HEAD_SHA\", \"branch\": \"$BRANCH_NAME\",
+            \"pr_number\": $PR_NUMBER, \"head_sha\": \"$HEAD_SHA\", \"branch\": \"$BRANCH\",
             \"phase\": \"WAITING_FOR_REVIEWS\", \"review_round\": 1,
             \"reviews\": { \"required\": [\"cubic-dev-ai[bot]\", \"sourcery-ai[bot]\"], \"completed\": {}, \"post_fix_rounds\": 0 },
             \"deployment\": { \"status\": \"pending\", \"sha\": \"$HEAD_SHA\" },

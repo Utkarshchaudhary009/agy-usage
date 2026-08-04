@@ -98,9 +98,11 @@ git checkout -b phase-{N}-{short-description}
 
 ### 3. Verify
 
-- Run `bun run lint` and fix all errors
+- Run `bun run format` to auto-fix formatting
+- Run `bun run lint --write` then `bun run lint` and fix all errors
 - Run `npx tsc --noEmit` for type checking
-- Do **not** run `bun build` or `bun dev` (slow machine). If either command is run and times out, ignore the timeout error and move on.
+- Run `bun build` to catch build errors. If it times out, ignore and move on.
+- Do **not** run `bun dev` (long-running server process).
 
 ### 4. Self-Review
 

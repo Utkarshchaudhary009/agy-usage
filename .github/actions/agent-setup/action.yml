@@ -1,5 +1,5 @@
 name: "Agent Setup"
-description: "Shared setup: Bun, project deps, Kilo Code CLI"
+description: "Shared setup: Bun, project deps, Kilo Code CLI, git identity"
 
 runs:
   using: composite
@@ -23,3 +23,9 @@ runs:
       run: |
         npm install -g @kilocode/cli@latest
         chmod +x kilocode-runner.sh
+
+    - name: Configure Git Identity
+      shell: bash
+      run: |
+        git config user.name "kilocode-bot"
+        git config user.email "bot@kilocode.ai"

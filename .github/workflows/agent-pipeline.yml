@@ -28,9 +28,9 @@ jobs:
       - name: Run Judge Agent
         run: |
           if [ "${{ github.event.client_payload.post_fix }}" == "true" ]; then
-            PROMPT="You are the Review Judge Agent (POST-FIX verification). Do a FRESH code review (run 'git --no-pager diff origin/main...HEAD'). Verify issues are resolved and no new blockers exist. Output JSON to 'findings.json': { \"status\": \"changes_required\" | \"approved\", \"findings\": [ { \"file\": \"...\", \"problem\": \"...\", \"action\": \"...\" } ] }. Set status to \"approved\" with empty findings if everything is correct."
+            PROMPT="You are the Review Judge Agent doing POST-FIX verification. Run 'git --no-pager diff origin/main...HEAD' to review changes. Verify all prior issues are resolved with no new blockers. Output ONLY valid JSON to 'findings.json': { \"status\": \"approved\" | \"changes_required\", \"findings\": [] }"
           else
-            PROMPT="You are the Review Judge Agent. PR Reviews: $(cat pr_reviews.json). Analyze all reviews, filter duplicates and false positives. Output JSON to 'findings.json': { \"status\": \"changes_required\" | \"approved\", \"findings\": [ { \"file\": \"...\", \"problem\": \"...\", \"action\": \"...\" } ] }"
+            PROMPT="You are the Review Judge Agent. PR Reviews: $(cat pr_reviews.json). Deduplicate and filter false positives. Output ONLY valid JSON to 'findings.json': { \"status\": \"approved\" | \"changes_required\", \"findings\": [ { \"file\": \"...\", \"problem\": \"...\", \"action\": \"...\" } ] }"
           fi
           ./kilocode-runner.sh "$PROMPT"
 
@@ -116,13 +116,10 @@ jobs:
 
       - name: Run Fixer Agent (self-verifying)
         run: |
-          VERIFY="After fixing, self-verify: run 'bun run format', 'bun run lint --write', 'bun run lint', and 'bun x tsc --noEmit'. If any fail, fix and re-run until ALL pass clean. Do not run git commit, git push, or gh commands — the workflow handles version control."
           if [ "${{ github.event.action }}" == "trigger-fixer" ]; then
-            ./kilocode-runner.sh \
-              "You are the Review Fixer Agent. Findings to fix: '${{ toJson(github.event.client_payload.findings) }}'. Fix valid findings. $VERIFY"
+            ./kilocode-runner.sh "Fix these review findings: ${{ toJson(github.event.client_payload.findings) }}. Follow AGENTS.md Step 3 (Verify) after fixing. Do NOT run git or gh commands — the workflow handles version control."
           else
-            ./kilocode-runner.sh \
-              "You are the Vercel Debugger Agent. Build Logs: $(cat clean_logs.txt). Fix the build/runtime errors. $VERIFY"
+            ./kilocode-runner.sh "Fix these Vercel build errors: $(cat clean_logs.txt). Follow AGENTS.md Step 3 (Verify) after fixing. Do NOT run git or gh commands — the workflow handles version control."
           fi
 
       - name: Commit & Push
