@@ -15,6 +15,7 @@ jobs:
       - name: Fetch PR Branch Name
         env:
           GH_TOKEN: ${{ secrets.ORCHESTRATOR_GH_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           BRANCH=$(gh pr view ${{ github.event.client_payload.pr_number }} --json headRefName -q .headRefName)
           echo "BRANCH=$BRANCH" >> $GITHUB_ENV
