@@ -2,7 +2,7 @@
 # [Husky] pre-push: typecheck before push
 
 echo "[husky] Running TypeScript type check..."
-npx tsc --noEmit
+bunx tsc --noEmit
 if [ $? -ne 0 ]; then
   echo "[husky] TypeScript errors found. Fix them before pushing."
   exit 1
