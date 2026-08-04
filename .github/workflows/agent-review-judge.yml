@@ -16,21 +16,8 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Kilo Code CLI
-        run: npm install -g @kilocode/cli@latest
-
-      - name: Create Model Fallback Runner
         run: |
-          cat <<'EOF' > kilocode-runner.sh
-          #!/usr/bin/env bash
-          PROMPT="$1"
-          MODELS=("tencent/hy3:free" "qwen/qwen-2.5-coder-32b-instruct:free" "openrouter/free")
-          for MODEL in "${MODELS[@]}"; do
-            if kilocode run --model "$MODEL" "$PROMPT"; then
-              exit 0
-            fi
-          done
-          exit 1
-          EOF
+          npm install -g @kilocode/cli@latest
           chmod +x kilocode-runner.sh
 
       - name: Fetch PR Reviews

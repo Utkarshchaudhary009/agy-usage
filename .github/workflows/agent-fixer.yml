@@ -32,20 +32,9 @@ jobs:
       - name: Install Project Dependencies
         run: bun install
 
-      - name: Install Kilo Code CLI & Create Runner
+      - name: Install Kilo Code CLI
         run: |
           npm install -g @kilocode/cli@latest
-          cat <<'EOF' > kilocode-runner.sh
-          #!/usr/bin/env bash
-          PROMPT="$1"
-          MODELS=("tencent/hy3:free" "qwen/qwen-2.5-coder-32b-instruct:free" "openrouter/free")
-          for MODEL in "${MODELS[@]}"; do
-            if kilocode run --model "$MODEL" "$PROMPT"; then
-              exit 0
-            fi
-          done
-          exit 1
-          EOF
           chmod +x kilocode-runner.sh
 
       - name: Fetch & Sanitize Vercel Build Logs
