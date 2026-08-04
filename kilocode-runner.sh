@@ -30,7 +30,7 @@ fi
 
 for MODEL in "${MODELS[@]}"; do
   echo "Attempting execution with model: $MODEL (timeout: ${TIMEOUT}s)..."
-  if $KCMD run --auto --timeout "$TIMEOUT" --model "$MODEL" "$PROMPT"; then
+  if timeout "$TIMEOUT" $KCMD run --auto --model "$MODEL" "$PROMPT"; then
     echo "Task succeeded with $MODEL"
     exit 0
   fi
