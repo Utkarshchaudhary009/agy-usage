@@ -99,7 +99,6 @@ jobs:
           fi
           git pull --rebase origin "$BRANCH_NAME" || true
           git push origin "$BRANCH_NAME"
-          rm -f pr_title.txt pr_body.md commit_msg.txt 2>/dev/null || true
 
       - name: Create Pull Request & Initialize Optimistic State
         env:
@@ -110,6 +109,7 @@ jobs:
           else
             PR_URL=$(gh pr create --title "Autonomous Next Phase" --body "Autonomous PR created by Kilo Code Builder Agent." --head "$BRANCH_NAME" --base "main")
           fi
+          rm -f pr_title.txt pr_body.md commit_msg.txt 2>/dev/null || true
           
           PR_NUMBER=$(echo "$PR_URL" | awk -F'/' '{print $NF}')
           HEAD_SHA=$(git rev-parse HEAD)
