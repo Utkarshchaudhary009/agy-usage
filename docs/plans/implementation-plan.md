@@ -956,9 +956,10 @@ src/lib/types/wakeup.ts
     - Check cooldown (skip if triggered within cooldown period)
     - For each selected account → trigger all selected models
     - Return aggregate result
-- [ ] Create cooldown checker `src/lib/wakeup/cooldown.ts`:
-  - `isOnCooldown(clerkUserId): Promise<boolean>`
-  - Query last trigger from `wakeup_logs`, compare with `cooldown_minutes`
+- [x] Create cooldown checker `src/lib/wakeup/cooldown.ts`:
+  - `isInCooldown(lastTriggeredAt, cooldownMs): boolean`
+  - `remainingCooldownMs(lastTriggeredAt, cooldownMs): number`
+  - Pure helpers; callers pass the last trigger from `wakeup_logs` and the configured `cooldown_minutes`
 - [ ] Create manual trigger API route `src/app/api/wakeup/trigger/route.ts`:
   - `POST /api/wakeup/trigger` → trigger now for current user
   - `POST /api/wakeup/trigger` with body `{ accountId, modelId }` → specific trigger
