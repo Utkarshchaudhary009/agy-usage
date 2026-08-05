@@ -19,6 +19,28 @@ export class TokenRefreshError extends Error {
 
 type TokenClient = SupabaseClient<Database>;
 
+// Serialize token refreshes per account so concurrent callers (parallel
+// requests or Inngest fan-out) that all observe an expired token don't each
+// independently hit Google. Without this lock we'd get a thundering herd that
+// wastes refresh-token quota and, on providers that rotate refresh tokens,
+// can invalidate a token another in-flight refresh is still using.
+const refreshLocks = new Map<string, Promise<string>>();
+
+function withRefreshLock(
+  accountId: string,
+  refresher: () => Promise<string>,
+): Promise<string> {
+  const inFlight = refreshLocks.get(accountId);
+  if (inFlight) {
+    return inFlight;
+  }
+  const promise = refresher().finally(() => {
+    refreshLocks.delete(accountId);
+  });
+  refreshLocks.set(accountId, promise);
+  return promise;
+}
+
 /**
  * Exchanges the refresh token for a new access token via Google, persists the
  * new tokens to the Vault, and updates the account's token status.
@@ -215,7 +237,9 @@ export const getValidAccessToken = cache(async function getValidAccessToken(
     throw new Error("No refresh token available to renew access token");
   }
 
-  return performTokenRefresh(tokenClient, accountId, refreshToken);
+  return withRefreshLock(accountId, () =>
+    performTokenRefresh(tokenClient, accountId, refreshToken),
+  );
 });
 
 /**
@@ -252,7 +276,9 @@ export async function forceRefreshToken(accountId: string): Promise<string> {
     throw new Error("No refresh token available to renew access token");
   }
 
-  return performTokenRefresh(service, accountId, refreshToken);
+  return withRefreshLock(accountId, () =>
+    performTokenRefresh(service, accountId, refreshToken),
+  );
 }
 
 /**
