@@ -48,5 +48,6 @@ next-env.d.ts
 
 # agent skills (installed in CI only, never committed)
 .kilocode/
+/skills-lock.json
 
 .vercel

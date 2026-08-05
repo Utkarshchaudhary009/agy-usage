@@ -8,12 +8,22 @@ function requireEnv(name: string): string {
   return value;
 }
 
+let cachedClientId: string | undefined;
+let cachedClientSecret: string | undefined;
+let cachedRedirectUri: string | undefined;
+
 export const GOOGLE_OAUTH = {
   get clientId(): string {
-    return requireEnv("GOOGLE_CLIENT_ID");
+    if (cachedClientId === undefined) {
+      cachedClientId = requireEnv("GOOGLE_CLIENT_ID");
+    }
+    return cachedClientId;
   },
   get clientSecret(): string {
-    return requireEnv("GOOGLE_CLIENT_SECRET");
+    if (cachedClientSecret === undefined) {
+      cachedClientSecret = requireEnv("GOOGLE_CLIENT_SECRET");
+    }
+    return cachedClientSecret;
   },
   authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
   tokenUrl: "https://oauth2.googleapis.com/token",
@@ -22,6 +32,9 @@ export const GOOGLE_OAUTH = {
     "https://www.googleapis.com/auth/userinfo.email",
   ],
   get redirectUri(): string {
-    return `${requireEnv("NEXT_PUBLIC_APP_URL")}/api/auth/google/callback`;
+    if (cachedRedirectUri === undefined) {
+      cachedRedirectUri = `${requireEnv("NEXT_PUBLIC_APP_URL")}/api/auth/google/callback`;
+    }
+    return cachedRedirectUri;
   },
 };
