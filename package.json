@@ -2,6 +2,10 @@
   "name": "agy-usage",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "bun@1.3.14",
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "dev": "next dev",
     "prebuild": "cp .env.local.example .env.local 2>/dev/null || true",

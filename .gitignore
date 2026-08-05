@@ -41,6 +41,10 @@ yarn-error.log*
 # vercel
 .vercel
 
+# stray deployment/debug logs (never commit operational logs)
+raw_logs*.json
+/logs
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
@@ -48,5 +52,6 @@ next-env.d.ts
 
 # agent skills (installed in CI only, never committed)
 .kilocode/
+/skills-lock.json
 
 .vercel
