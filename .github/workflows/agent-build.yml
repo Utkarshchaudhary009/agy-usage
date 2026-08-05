@@ -1,8 +1,8 @@
-name: "1. Agent Build & PR"
+name: "1. Agent Build & Branch"
 
 on:
   schedule:
-    - cron: '0 */3 * * *'
+    - cron: '0 */8 * * *'
   workflow_dispatch:
     inputs:
       task:
@@ -20,6 +20,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      actions: write
 
     steps:
       - uses: actions/checkout@v4
@@ -38,39 +39,6 @@ jobs:
           fi
           ./kilocode-runner.sh "You are Autonomous Kilobot. $TASK"
 
-      - name: Install Quality Skills (best-effort)
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.ORCHESTRATOR_GH_TOKEN || secrets.GITHUB_TOKEN }}
-        run: |
-          bunx skills add vercel/next.js --agent kilo -y --skill '*' || true
-          bunx skills add maddhruv/absolute --agent kilo -y --skill absolute-audit || true
-          bunx skills add mattpocock/skills --agent kilo -y --skill improve-codebase-architecture || true
-          bunx skills add vercel-labs/agent-skills --agent kilo -y --skill vercel-react-best-practices || true
-          bunx skills add clerk/skills --agent kilo -y --skill '*' || true
-          bunx skills add supabase/agent-skills --agent kilo -y --skill '*' || true
-          bunx skills add addyosmani/agent-skills --agent kilo -y --skill code-review-and-quality || true
-
-      - name: Quality Gate (8 serial review agents)
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.ORCHESTRATOR_GH_TOKEN || secrets.GITHUB_TOKEN }}
-        run: |
-          PASSES=(
-            "security vulnerabilities (injection, XSS, and other OWASP issues)"
-            "architecture and design quality (simplicity, efficiency, robust modularity)"
-            "maintainability"
-            "race conditions"
-            "Next.js best practices"
-            "React best practices"
-            "Clerk best practices"
-            "Supabase best practices"
-          )
-          for PASS in "${PASSES[@]}"; do
-            echo "=== Quality pass: $PASS ==="
-            ./kilocode-runner.sh "You are a Senior Developer. Review the code changes for $PASS. Fix all issues found."
-          done
-
       - name: Verify Build (with rescue pass)
         shell: bash
         env:
@@ -82,7 +50,7 @@ jobs:
             npx next build
           fi
 
-      - name: Ensure Feature Branch
+      - name: Create Branch & Commit Builder Output
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.ORCHESTRATOR_GH_TOKEN || secrets.GITHUB_TOKEN }}
@@ -90,54 +58,41 @@ jobs:
           BRANCH=$(git branch --show-current)
           if [ "$BRANCH" = "main" ]; then
             git checkout -b "phase-$(date +%s)"
-            echo "Created branch: $(git branch --show-current)"
+            BRANCH=$(git branch --show-current)
+            echo "Created branch: $BRANCH"
           fi
 
-      - name: Restore Local AGENTS.md (never commit CI copy)
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.ORCHESTRATOR_GH_TOKEN || secrets.GITHUB_TOKEN }}
-        run: |
           git update-index --no-skip-worktree AGENTS.md
           git checkout -- AGENTS.md
           git update-index --skip-worktree AGENTS.md
 
-      - name: Run Submit Agent
-        env:
-          GH_TOKEN: ${{ secrets.ORCHESTRATOR_GH_TOKEN || secrets.GITHUB_TOKEN }}
-        run: |
-          ./kilocode-runner.sh "You are a Senior Developer. Commit all changes and create a detailed PR. After running 'gh pr create', write ONLY the PR URL to a file called 'pr_url.txt'."
-
-      - name: Initialize Orchestrator State
-        env:
-          GH_TOKEN: ${{ secrets.ORCHESTRATOR_GH_TOKEN || secrets.GITHUB_TOKEN }}
-        run: |
-          if [ ! -f pr_url.txt ]; then
-            echo "Agent did not produce pr_url.txt. Falling back."
-            BRANCH=$(git branch --show-current)
-            git add -A
-            if git diff --staged --quiet; then echo "No changes to commit." && exit 1; fi
+          git add -A
+          if ! git diff --staged --quiet; then
             git commit -m "feat: autonomous next phase [kilocode-bot]"
-            git push origin "$BRANCH"
-            PR_URL=$(gh pr create --head "$BRANCH" --base main --title "Autonomous Next Phase" --body "Autonomous PR by kilocode-bot.")
+            echo "Committed builder output."
           else
-            PR_URL=$(cat pr_url.txt | tr -d '[:space:]')
+            echo "No new changes from builder."
           fi
+          git push -u origin "$BRANCH"
 
-          PR_NUMBER=$(echo "$PR_URL" | awk -F'/' '{print $NF}')
-          HEAD_SHA=$(git rev-parse HEAD)
-          BRANCH=$(git branch --show-current)
+          echo "BRANCH=$BRANCH" >> $GITHUB_ENV
+          echo "HEAD_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
 
-          gh pr comment "$PR_NUMBER" --body "<!-- ORCHESTRATOR_STATE:
-          {
-            \"version\": 1, \"run_id\": \"task-$(date +%s)\",
-            \"pr_number\": $PR_NUMBER, \"head_sha\": \"$HEAD_SHA\", \"branch\": \"$BRANCH\",
-            \"phase\": \"WAITING_FOR_REVIEWS\", \"review_round\": 1,
-            \"reviews\": { \"required\": [\"cubic-dev-ai[bot]\", \"sourcery-ai[bot]\"], \"completed\": {}, \"post_fix_rounds\": 0 },
-            \"deployment\": { \"status\": \"pending\", \"sha\": \"$HEAD_SHA\" },
-            \"gates\": { \"deployment_passed\": false, \"reviews_passed\": false },
-            \"attempts\": { \"total_agent_runs\": 1, \"max_limit\": 10 },
-            \"processed_event_ids\": []
-          }
-          -->
-          Autonomous Orchestrator Initialized (v1)."
+      - name: Dispatch Quality Gate 1
+        uses: actions/github-script@v7
+        env:
+          BRANCH: ${{ env.BRANCH }}
+          HEAD_SHA: ${{ env.HEAD_SHA }}
+        with:
+          script: |
+            await github.rest.repos.createDispatchEvent({
+              owner: context.repo.owner, repo: context.repo.repo,
+              event_type: 'quality-gate',
+              client_payload: {
+                run_id: `phase-${Date.now()}`,
+                branch: process.env.BRANCH,
+                head_sha: process.env.HEAD_SHA,
+                gate_index: 1,
+                failed_gates: ''
+              }
+            });

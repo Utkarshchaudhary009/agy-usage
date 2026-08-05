@@ -32,13 +32,19 @@ else
   KCMD="npx -y kilocode"
 fi
 
+# Bound each model attempt so a hung/rate-limited request cannot stall the
+# pipeline for hours. Override via KILO_ATTEMPT_TIMEOUT.
+ATTEMPT_TIMEOUT="${KILO_ATTEMPT_TIMEOUT:-600}"
+
 for MODEL in "${MODELS[@]}"; do
-  echo "Attempting execution with model: $MODEL..."
-  if $KCMD run --auto --model "$MODEL" "$FULL_PROMPT"; then
+  echo "Attempting execution with model: $MODEL... (timeout ${ATTEMPT_TIMEOUT}s)"
+  timeout -k 10 "$ATTEMPT_TIMEOUT" $KCMD run --auto --model "$MODEL" "$FULL_PROMPT"
+  RC=$?
+  if [ "$RC" -eq 0 ]; then
     echo "Task succeeded with $MODEL"
     exit 0
   fi
-  echo "Model $MODEL failed or rate-limited. Trying next fallback..."
+  echo "Model $MODEL failed, rate-limited, or timed out ($RC). Trying next fallback..."
 done
 
 echo "All model fallbacks failed."

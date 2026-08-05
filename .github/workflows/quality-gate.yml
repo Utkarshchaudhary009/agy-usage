@@ -1,0 +1,193 @@
+name: "Quality Gate (1-8, sequential)"
+
+on:
+  repository_dispatch:
+    types: [quality-gate]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to review (resume a broken chain)"
+        required: true
+        type: string
+      gate_index:
+        description: "Gate index to run (1-8)"
+        required: true
+        type: number
+        default: 1
+
+concurrency:
+  group: quality-gate-${{ github.event.client_payload.branch || github.event.inputs.branch }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.client_payload.branch || github.event.inputs.branch }}
+
+      - uses: ./.github/actions/agent-setup
+
+      - name: Resolve Gate Params
+        shell: bash
+        run: |
+          GATE_INDEX="${{ github.event.client_payload.gate_index || github.event.inputs.gate_index }}"
+          BRANCH="${{ github.event.client_payload.branch || github.event.inputs.branch }}"
+          FAILED_GATES="${{ github.event.client_payload.failed_gates }}"
+
+          case "$GATE_INDEX" in
+            1) LABEL="Security";             FOCUS="security vulnerabilities (injection, XSS, and other OWASP issues)";;
+            2) LABEL="Architecture & Design"; FOCUS="architecture and design quality (simplicity, efficiency, robust modularity)";;
+            3) LABEL="Maintainability";      FOCUS="maintainability";;
+            4) LABEL="Race Conditions";      FOCUS="race conditions";;
+            5) LABEL="Next.js Best Practices"; FOCUS="Next.js best practices";;
+            6) LABEL="React Best Practices"; FOCUS="React best practices";;
+            7) LABEL="Clerk Best Practices"; FOCUS="Clerk best practices";;
+            8) LABEL="Supabase Best Practices"; FOCUS="Supabase best practices";;
+            *) echo "Unknown gate index: $GATE_INDEX"; exit 1;;
+          esac
+
+          echo "GATE_INDEX=$GATE_INDEX" >> $GITHUB_ENV
+          echo "GATE_LABEL=$LABEL" >> $GITHUB_ENV
+          echo "FOCUS=$FOCUS" >> $GITHUB_ENV
+          echo "BRANCH=$BRANCH" >> $GITHUB_ENV
+          echo "FAILED_GATES=${FAILED_GATES:-}" >> $GITHUB_ENV
+          echo "Gate $GATE_INDEX/8 ($LABEL) on $BRANCH"
+
+      - name: Install Quality Skills (best-effort)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.ORCHESTRATOR_GH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          bunx skills add vercel/next.js --agent kilo -y --skill '*' || true
+          bunx skills add maddhruv/absolute --agent kilo -y --skill absolute-audit || true
+          bunx skills add mattpocock/skills --agent kilo -y --skill improve-codebase-architecture || true
+          bunx skills add vercel-labs/agent-skills --agent kilo -y --skill vercel-react-best-practices || true
+          bunx skills add clerk/skills --agent kilo -y --skill '*' || true
+          bunx skills add supabase/agent-skills --agent kilo -y --skill '*' || true
+          bunx skills add addyosmani/agent-skills --agent kilo -y --skill code-review-and-quality || true
+
+      - name: Compute Diff vs Main
+        shell: bash
+        run: |
+          git fetch origin main
+          git diff origin/main...HEAD -- . ':!AGENTS.md' > /tmp/review.diff
+          echo "Diff lines: $(wc -l < /tmp/review.diff)"
+
+      - name: Run Quality Reviewer
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.ORCHESTRATOR_GH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          ./kilocode-runner.sh "You are a Senior Developer. Review the code changes in /tmp/review.diff for $FOCUS. Fix all issues found in the working tree. Do NOT commit or push." \
+            && echo "GATE_RESULT=PASS" >> $GITHUB_ENV \
+            || { echo "WARNING: quality gate '$GATE_LABEL' failed. Continuing with next gate..."; echo "GATE_RESULT=FAIL" >> $GITHUB_ENV; }
+
+      - name: Verify Build (final gate only)
+        if: env.GATE_INDEX >= 8
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.ORCHESTRATOR_GH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          if ! npx next build; then
+            echo "Build failed after final gate. Running rescue agent..."
+            ./kilocode-runner.sh "You are a Senior Developer. The build is failing. Fix all build errors in the working tree. Do NOT commit or push."
+            npx next build
+          fi
+
+      - name: Commit & Push Fixes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.ORCHESTRATOR_GH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          git update-index --no-skip-worktree AGENTS.md
+          git checkout -- AGENTS.md
+          git update-index --skip-worktree AGENTS.md
+
+          git add -A
+          if ! git diff --staged --quiet; then
+            git commit -m "fix: quality gate ${GATE_INDEX}/8 (${GATE_LABEL}) [kilocode-bot]"
+            echo "Committed gate fixes."
+          else
+            echo "No changes from this gate."
+          fi
+          git pull --rebase origin "$BRANCH"
+          git push origin "$BRANCH"
+
+          echo "NEW_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
+
+      - name: Dispatch Next Gate
+        if: env.GATE_INDEX < 8
+        uses: actions/github-script@v7
+        env:
+          NEW_SHA: ${{ env.NEW_SHA }}
+          GATE_INDEX: ${{ env.GATE_INDEX }}
+          GATE_LABEL: ${{ env.GATE_LABEL }}
+          GATE_RESULT: ${{ env.GATE_RESULT }}
+          BRANCH: ${{ env.BRANCH }}
+          FAILED_GATES: ${{ env.FAILED_GATES }}
+        with:
+          script: |
+            const index = parseInt(process.env.GATE_INDEX, 10);
+            let failed = process.env.FAILED_GATES || '';
+            if (process.env.GATE_RESULT === 'FAIL') {
+              failed = failed ? `${failed}, ${process.env.GATE_LABEL}` : process.env.GATE_LABEL;
+            }
+            await github.rest.repos.createDispatchEvent({
+              owner: context.repo.owner, repo: context.repo.repo,
+              event_type: 'quality-gate',
+              client_payload: {
+                branch: process.env.BRANCH,
+                head_sha: process.env.NEW_SHA,
+                gate_index: index + 1,
+                failed_gates: failed
+              }
+            });
+            console.log(`Dispatched gate ${index + 1} of ${process.env.BRANCH} at ${process.env.NEW_SHA}`);
+
+      - name: Create PR & Initialize Orchestrator State
+        if: env.GATE_INDEX >= 8
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.ORCHESTRATOR_GH_TOKEN || secrets.GITHUB_TOKEN }}
+          NEW_SHA: ${{ env.NEW_SHA }}
+          BRANCH: ${{ env.BRANCH }}
+          FAILED_GATES: ${{ env.FAILED_GATES }}
+        run: |
+          if [ -n "$FAILED_GATES" ]; then
+            Q=false
+            BODY="Autonomous PR by kilocode-bot, created after 8 quality gates.
+
+            ⚠️ Failed/skipped gates: $FAILED_GATES"
+          else
+            Q=true
+            BODY="Autonomous PR by kilocode-bot, created after 8 quality gates."
+          fi
+
+          PR_URL=$(gh pr create --base main --head "$BRANCH" --title "Autonomous Next Phase" --body "$BODY")
+          echo "PR created: $PR_URL"
+
+          PR_NUMBER=$(echo "$PR_URL" | awk -F'/' '{print $NF}')
+          HEAD_SHA="$NEW_SHA"
+
+          gh pr comment "$PR_NUMBER" --body "<!-- ORCHESTRATOR_STATE:
+          {
+            \"version\": 1, \"run_id\": \"task-$(date +%s)\",
+            \"pr_number\": $PR_NUMBER, \"head_sha\": \"$HEAD_SHA\", \"branch\": \"$BRANCH\",
+            \"phase\": \"WAITING_FOR_REVIEWS\", \"review_round\": 1,
+            \"reviews\": { \"required\": [\"cubic-dev-ai[bot]\", \"sourcery-ai[bot]\"], \"completed\": {}, \"post_fix_rounds\": 0 },
+            \"deployment\": { \"status\": \"pending\", \"sha\": \"$HEAD_SHA\" },
+            \"gates\": { \"deployment_passed\": false, \"reviews_passed\": false, \"quality_gates_passed\": $Q },
+            \"attempts\": { \"total_agent_runs\": 1, \"max_limit\": 10 },
+            \"processed_event_ids\": []
+          }
+          -->
+          Autonomous Orchestrator Initialized (v1)."
