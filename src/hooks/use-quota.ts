@@ -1,3 +1,5 @@
+"use client";
+
 import { useCallback, useEffect, useState } from "react";
 import type { QuotaSnapshot } from "@/lib/types/quota";
 
