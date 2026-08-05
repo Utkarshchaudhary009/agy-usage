@@ -1,8 +1,12 @@
+import { auth } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
-import { GOOGLE_OAUTH } from "@/lib/google/oauth-config";
+import {
+  assertGoogleOAuthConfig,
+  GOOGLE_OAUTH,
+} from "@/lib/google/oauth-config";
 import { decryptToken as decryptState } from "@/lib/google/state-crypto";
-import { createServerClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
 import type { GoogleTokenResponse, GoogleUserInfo } from "@/lib/types/google";
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
@@ -20,6 +24,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!code || !state) {
     return NextResponse.redirect(
       new URL("/accounts?error=missing_parameters", req.url),
+    );
+  }
+
+  try {
+    assertGoogleOAuthConfig();
+  } catch (configError) {
+    console.error("Google OAuth is not configured:", configError);
+    return NextResponse.redirect(
+      new URL("/accounts?error=configuration_error", req.url),
     );
   }
 
@@ -48,6 +61,28 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       new URL("/accounts?error=state_mismatch", req.url),
     );
   }
+
+  if (!cookieData.clerkUserId) {
+    cookieStore.delete("google_oauth_state");
+    return NextResponse.redirect(
+      new URL("/accounts?error=invalid_cookie", req.url),
+    );
+  }
+
+  // Google redirects the browser here, so a Clerk session may or may not be
+  // present (this route is public in the proxy for exactly that reason). When
+  // one *is* present it must match the user who started the flow, otherwise a
+  // stale cookie from an earlier account could link a Google account into the
+  // wrong dashboard.
+  const { userId: sessionUserId } = await auth();
+  if (sessionUserId && sessionUserId !== cookieData.clerkUserId) {
+    cookieStore.delete("google_oauth_state");
+    return NextResponse.redirect(
+      new URL("/accounts?error=session_mismatch", req.url),
+    );
+  }
+
+  const clerkUserId = cookieData.clerkUserId;
 
   try {
     // Exchange code for tokens
@@ -93,14 +128,26 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const email = profileData.email;
     const name = profileData.name || null;
 
-    // Connect to Supabase
-    const supabase = await createServerClient();
+    // Deliberately authorized service-role path.
+    //
+    // RLS is not usable here: Google performs a cross-site redirect, so there
+    // is no guarantee of a live Clerk session (and therefore no
+    // `auth().getToken()`) on this request. An RLS-scoped client would fall
+    // back to anonymous and every write below would silently fail.
+    //
+    // The authorization that replaces it is the `google_oauth_state` cookie:
+    // httpOnly, AES-256-GCM authenticated encryption with a server-only key,
+    // and its `state` was matched against the one Google echoed back. It is
+    // therefore unforgeable proof that `clerkUserId` started this flow. Every
+    // statement below is explicitly scoped to that id so the elevated client
+    // can only ever touch that user's rows.
+    const supabase = createServiceClient();
 
     // Check if account already exists
     const { data: existingAccount, error: existingError } = await supabase
       .from("google_accounts")
       .select("id, is_active")
-      .eq("clerk_user_id", cookieData.clerkUserId)
+      .eq("clerk_user_id", clerkUserId)
       .eq("email", email)
       .single();
 
@@ -123,7 +170,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           display_name: name,
           token_status: "active",
         })
-        .eq("id", accountId);
+        .eq("id", accountId)
+        .eq("clerk_user_id", clerkUserId);
 
       if (updateError) {
         console.error("Account update failed:", updateError);
@@ -136,7 +184,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       const { count, error: countError } = await supabase
         .from("google_accounts")
         .select("id", { count: "exact", head: true })
-        .eq("clerk_user_id", cookieData.clerkUserId)
+        .eq("clerk_user_id", clerkUserId)
         .eq("is_active", true);
 
       if (countError) {
@@ -152,7 +200,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       const { data: newAccount, error: insertError } = await supabase
         .from("google_accounts")
         .insert({
-          clerk_user_id: cookieData.clerkUserId,
+          clerk_user_id: clerkUserId,
           email,
           display_name: name,
           is_active: isFirstAccount,

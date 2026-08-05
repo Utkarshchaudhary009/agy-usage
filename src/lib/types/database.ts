@@ -6,6 +6,32 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
+/**
+ * Result of `acquire_token_refresh_lease`.
+ *
+ * - `fresh`: a still-valid access token is already persisted; no lease taken.
+ * - `locked`: another instance holds the lease; back off and retry.
+ * - `granted`: this caller owns the lease and must release it with `lock_token`.
+ */
+export type TokenRefreshLease =
+  | {
+      outcome: "fresh";
+      access_token: string | null;
+      expires_at: string | null;
+    }
+  | {
+      outcome: "locked";
+      locked_until: string;
+      expires_at: string | null;
+    }
+  | {
+      outcome: "granted";
+      lock_token: string;
+      refresh_token: string | null;
+      access_token: string | null;
+      expires_at: string | null;
+    };
+
 export interface Database {
   public: {
     Tables: {
@@ -179,6 +205,35 @@ export interface Database {
           },
         ];
       };
+      token_refresh_leases: {
+        Row: {
+          account_id: string;
+          lock_token: string;
+          locked_until: string;
+          acquired_at: string;
+        };
+        Insert: {
+          account_id: string;
+          lock_token: string;
+          locked_until: string;
+          acquired_at?: string;
+        };
+        Update: {
+          account_id?: string;
+          lock_token?: string;
+          locked_until?: string;
+          acquired_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "token_refresh_leases_account_id_fkey";
+            columns: ["account_id"];
+            isOneToOne: true;
+            referencedRelation: "google_accounts";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -229,6 +284,22 @@ export interface Database {
           p_account_id: string;
         };
         Returns: undefined;
+      };
+      acquire_token_refresh_lease: {
+        Args: {
+          p_account_id: string;
+          p_ttl_seconds?: number;
+          p_expiry_buffer_seconds?: number;
+          p_force?: boolean;
+        };
+        Returns: TokenRefreshLease | null;
+      };
+      release_token_refresh_lease: {
+        Args: {
+          p_account_id: string;
+          p_lock_token: string;
+        };
+        Returns: boolean;
       };
     };
     Enums: {

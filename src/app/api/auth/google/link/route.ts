@@ -2,7 +2,10 @@ import crypto from "node:crypto";
 import { auth } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { GOOGLE_OAUTH } from "@/lib/google/oauth-config";
+import {
+  assertGoogleOAuthConfig,
+  GOOGLE_OAUTH,
+} from "@/lib/google/oauth-config";
 import { encryptToken as encryptState } from "@/lib/google/state-crypto";
 
 export async function GET() {
@@ -11,6 +14,10 @@ export async function GET() {
   if (!userId) {
     redirect("/sign-in");
   }
+
+  // Fail fast on a misconfigured deployment: better one clear OAuthConfigError
+  // here than a half-started flow with a dangling state cookie.
+  assertGoogleOAuthConfig();
 
   // Generate PKCE verifier and challenge
   const verifier = crypto.randomBytes(32).toString("base64url");

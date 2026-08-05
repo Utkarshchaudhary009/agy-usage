@@ -3,13 +3,32 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
-import type { Database } from "@/lib/types/database";
+import type { Database, TokenRefreshLease } from "@/lib/types/database";
 import type { GoogleTokenResponse } from "@/lib/types/google";
-import { GOOGLE_OAUTH } from "./oauth-config";
+import { GOOGLE_OAUTH, OAuthConfigError } from "./oauth-config";
 
 // Refresh token 5 minutes before expiry
 const EXPIRY_BUFFER_MS = 5 * 60 * 1000;
 
+/** Hard ceiling on one read -> exchange -> persist sequence. */
+const REFRESH_DEADLINE_MS = 25_000;
+/**
+ * Database lease TTL. Must exceed REFRESH_DEADLINE_MS so a holder that is still
+ * working never has its lease reaped out from under it, but stay small enough
+ * that a crashed holder unblocks the account quickly.
+ */
+const LEASE_TTL_SECONDS = 30;
+/** Backoff bounds while waiting for another instance's lease to clear. */
+const LEASE_POLL_BASE_MS = 200;
+const LEASE_POLL_MAX_MS = 2_000;
+/** Independent budget for the lease release, which must run even after abort. */
+const LEASE_RELEASE_TIMEOUT_MS = 5_000;
+/** Independent budget for the "this refresh token is dead" write. */
+const REVOKE_WRITE_TIMEOUT_MS = 5_000;
+/** Per-attempt budget for the Google token endpoint. */
+const GOOGLE_TOKEN_TIMEOUT_MS = 10_000;
+
+/** Permanent failure: Google rejected the grant, the account must re-auth. */
 export class TokenRefreshError extends Error {
   constructor(message: string) {
     super(message);
@@ -17,72 +36,269 @@ export class TokenRefreshError extends Error {
   }
 }
 
+/**
+ * Transient failure: the refresh sequence exceeded its deadline and was
+ * aborted. Deliberately NOT a TokenRefreshError — callers surface those as
+ * "re-authenticate this account", which would be wrong for a network stall.
+ */
+export class TokenRefreshTimeoutError extends Error {
+  constructor(accountId: string, timeoutMs: number) {
+    super(
+      `Token refresh for account ${accountId} exceeded ${timeoutMs}ms and was aborted`,
+    );
+    this.name = "TokenRefreshTimeoutError";
+  }
+}
+
+/** Options shared by the account-scoped token helpers. */
+export interface TokenAccessOptions {
+  /**
+   * Set to true when calling from a background job (Inngest) that has no Clerk
+   * request context, so the service-role client is used instead of RLS.
+   */
+  asBackgroundJob?: boolean;
+}
+
 type TokenClient = SupabaseClient<Database>;
 
-// Serialize token refreshes per account so concurrent callers (parallel
-// requests or Inngest fan-out) that all observe an expired token don't each
-// independently hit Google. Without this lock we'd get a thundering herd that
-// wastes refresh-token quota and, on providers that rotate refresh tokens,
-// can invalidate a token another in-flight refresh is still using.
+// First-level, per-process dedupe of token refreshes. Concurrent callers in the
+// *same* instance (parallel requests, Inngest fan-out landing on one lambda)
+// that all observe an expired token share a single in-flight refresh instead of
+// each paying a database round-trip to discover they lost the race.
 //
 // This is intentionally process-global rather than request-scoped: React's
 // cache() only dedupes within a single request, and the herd we care about is
 // made of *separate* requests. Only the resulting access token is shared —
 // never a request-scoped Supabase client — so no caller's auth context can
 // leak into another's.
+//
+// It is only an optimization. The correctness guarantee lives in the database
+// lease below, because separate Vercel instances do not share this map.
 const refreshLocks = new Map<string, Promise<string>>();
 
-function withRefreshLock(
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
+ * Runs a refresh sequence under a single cancellable deadline.
+ *
+ * The signal is threaded through every Supabase round-trip and the Google
+ * fetch, so a stalled dependency aborts the whole sequence instead of parking
+ * every joined caller forever.
+ *
+ * Note the deliberate absence of `Promise.race()`: racing would resolve the
+ * caller while the underlying rotation is still running, which is exactly the
+ * situation the lock exists to prevent. Instead the operation is aborted and
+ * then awaited to completion.
+ */
+async function withRefreshDeadline(
   accountId: string,
-  refresher: () => Promise<string>,
+  operation: (signal: AbortSignal) => Promise<string>,
 ): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    controller.abort(
+      new TokenRefreshTimeoutError(accountId, REFRESH_DEADLINE_MS),
+    );
+  }, REFRESH_DEADLINE_MS);
+
+  try {
+    return await operation(controller.signal);
+  } catch (err) {
+    // Normalize whatever the aborted dependency threw (DOMException,
+    // PostgrestError, ...) into one recognizable timeout error.
+    if (controller.signal.aborted) {
+      throw controller.signal.reason instanceof Error
+        ? controller.signal.reason
+        : new TokenRefreshTimeoutError(accountId, REFRESH_DEADLINE_MS);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Opportunistic refresh: joins an in-flight refresh for the same account in
+ * this process, otherwise starts one.
+ *
+ * The lock entry is removed only after the underlying sequence has fully
+ * settled (including an aborted one finishing its unwind), so a later caller
+ * can never start a second exchange while the first is still mid-rotation.
+ */
+function refreshAccessToken(accountId: string): Promise<string> {
   const inFlight = refreshLocks.get(accountId);
   if (inFlight) {
     return inFlight;
   }
-  const promise = refresher().finally(() => {
+
+  const promise = withRefreshDeadline(accountId, (signal) =>
+    refreshUnderLease(accountId, false, signal),
+  ).finally(() => {
     refreshLocks.delete(accountId);
   });
+
   refreshLocks.set(accountId, promise);
   return promise;
 }
 
-/**
- * Reads the stored refresh token with the service role and exchanges it.
- *
- * Callers must have already verified ownership of `accountId`:
- * get_decrypted_refresh_token is service-role-only and performs no RLS check.
- *
- * The read lives inside this function (and therefore inside the refresh lock)
- * on purpose. If it were hoisted above the lock, a caller could read the
- * refresh token, lose the race to another refresh that rotates it, and then
- * replay the now-stale token — which Google answers with `invalid_grant`,
- * causing us to wrongly mark a healthy account as revoked.
- */
-async function readAndExchangeRefreshToken(accountId: string): Promise<string> {
-  const service = createServiceClient();
-  const { data: refreshToken, error: refreshRpcError } = await service.rpc(
-    "get_decrypted_refresh_token",
-    { p_account_id: accountId },
-  );
+function isStillValid(expiresAt: string | null | undefined): boolean {
+  if (!expiresAt) return false;
+  return Date.now() < new Date(expiresAt).getTime() - EXPIRY_BUFFER_MS;
+}
 
-  if (refreshRpcError || !refreshToken) {
-    throw new Error("No refresh token available to renew access token");
+async function releaseLease(
+  service: TokenClient,
+  accountId: string,
+  lockToken: string,
+): Promise<void> {
+  try {
+    // Deliberately not the sequence signal: the lease must be released even
+    // when the sequence was aborted, so it gets its own small budget.
+    const { error } = await service
+      .rpc("release_token_refresh_lease", {
+        p_account_id: accountId,
+        p_lock_token: lockToken,
+      })
+      .abortSignal(AbortSignal.timeout(LEASE_RELEASE_TIMEOUT_MS));
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  } catch (err) {
+    // Best effort: the lease carries a TTL, so a failed release self-heals.
+    console.error("Failed to release token refresh lease", {
+      accountId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
+}
 
-  return performTokenRefresh(service, accountId, refreshToken);
+/**
+ * Serializes the read -> Google exchange -> persist sequence across *all*
+ * instances using a database lease, then performs it.
+ *
+ * A process-local Map cannot provide this guarantee: on the documented Vercel
+ * deployment, concurrent HTTP requests and Inngest steps run on separate
+ * instances that share no memory. Without a shared lease two of them can read
+ * the same refresh token and exchange it in parallel; Google rotates the token
+ * for the winner and answers the loser with `invalid_grant`, which this module
+ * would otherwise record as a revoked account.
+ *
+ * The refresh token is read *by the lease grant itself* (inside the same
+ * transaction that records the lease) rather than beforehand, so a caller can
+ * never replay a token that a concurrent refresh has already rotated.
+ *
+ * @param force - mint a new token even if the persisted one is still valid.
+ */
+async function refreshUnderLease(
+  accountId: string,
+  force: boolean,
+  signal: AbortSignal,
+): Promise<string> {
+  const service = createServiceClient();
+
+  // Once we have waited on another instance's in-flight refresh, the token it
+  // persists is just as newly minted as one we would produce ourselves, so a
+  // forced caller can (and should) accept it instead of burning a second
+  // exchange.
+  let joinedInFlight = false;
+  let attempt = 0;
+
+  for (;;) {
+    signal.throwIfAborted();
+
+    const { data, error } = await service
+      .rpc("acquire_token_refresh_lease", {
+        p_account_id: accountId,
+        p_ttl_seconds: LEASE_TTL_SECONDS,
+        p_expiry_buffer_seconds: Math.ceil(EXPIRY_BUFFER_MS / 1000),
+        p_force: force && !joinedInFlight,
+      })
+      .abortSignal(signal);
+
+    if (error) {
+      throw new Error(
+        `Failed to acquire token refresh lease: ${error.message}`,
+      );
+    }
+
+    const lease = data as TokenRefreshLease | null;
+    if (!lease) {
+      throw new Error("Failed to acquire token refresh lease: empty response");
+    }
+
+    // Another instance refreshed while we were queued.
+    if (lease.outcome === "fresh") {
+      if (!lease.access_token) {
+        throw new Error("Tokens not found for this account");
+      }
+      return lease.access_token;
+    }
+
+    if (lease.outcome === "locked") {
+      joinedInFlight = true;
+      attempt += 1;
+      await sleep(
+        Math.min(LEASE_POLL_BASE_MS * 2 ** (attempt - 1), LEASE_POLL_MAX_MS),
+        signal,
+      );
+      continue;
+    }
+
+    try {
+      if (!lease.refresh_token) {
+        throw new TokenRefreshError(
+          "No refresh token available to renew access token",
+        );
+      }
+      return await performTokenRefresh(
+        service,
+        accountId,
+        lease.refresh_token,
+        signal,
+      );
+    } finally {
+      await releaseLease(service, accountId, lease.lock_token);
+    }
+  }
 }
 
 /**
  * Exchanges the refresh token for a new access token via Google, persists the
  * new tokens to the Vault, and updates the account's token status.
  * Throws TokenRefreshError for permanent failures (revoked/invalid grants).
+ *
+ * Must only be called while holding the account's refresh lease.
  */
 async function performTokenRefresh(
   supabase: TokenClient,
   accountId: string,
   refreshToken: string,
+  signal: AbortSignal,
 ): Promise<string> {
+  // Read OAuth credentials up front: a missing env var is a deployment defect,
+  // not a transient fault, so the OAuthConfigError must surface immediately
+  // instead of being retried with backoff and reported as a network error by
+  // the loop below.
+  const clientId = GOOGLE_OAUTH.clientId;
+  const clientSecret = GOOGLE_OAUTH.clientSecret;
+
   // Refresh via Google API with retry logic
   let tokenResponse: Response | null = null;
   const MAX_RETRIES = 2; // initial attempt + 1 retry
@@ -92,11 +308,15 @@ async function performTokenRefresh(
       tokenResponse = await fetch(GOOGLE_OAUTH.tokenUrl, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        // Bound each attempt so a stalled Google response cannot hang callers.
-        signal: AbortSignal.timeout(10_000),
+        // Bound each attempt so a stalled Google response cannot hang callers,
+        // and honour the sequence deadline so an abort unwinds immediately.
+        signal: AbortSignal.any([
+          signal,
+          AbortSignal.timeout(GOOGLE_TOKEN_TIMEOUT_MS),
+        ]),
         body: new URLSearchParams({
-          client_id: GOOGLE_OAUTH.clientId,
-          client_secret: GOOGLE_OAUTH.clientSecret,
+          client_id: clientId,
+          client_secret: clientSecret,
           refresh_token: refreshToken,
           grant_type: "refresh_token",
         }),
@@ -109,10 +329,14 @@ async function performTokenRefresh(
 
         // Check if permanent error (revoked)
         if (errorData.error === "invalid_grant") {
+          // Own timeout rather than the sequence signal: losing this write
+          // would leave a dead account looking healthy and re-refreshing
+          // forever.
           await supabase
             .from("google_accounts")
             .update({ token_status: "revoked" })
-            .eq("id", accountId);
+            .eq("id", accountId)
+            .abortSignal(AbortSignal.timeout(REVOKE_WRITE_TIMEOUT_MS));
           throw new TokenRefreshError(
             "Refresh token has been revoked or is invalid",
           );
@@ -128,7 +352,7 @@ async function performTokenRefresh(
         // For 5xx errors, we can retry
         if (tokenResponse.status >= 500) {
           if (attempt < MAX_RETRIES) {
-            await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+            await sleep(1000 * attempt, signal);
             continue;
           }
           // Final attempt failed
@@ -145,6 +369,12 @@ async function performTokenRefresh(
         throw err; // Don't retry permanent errors
       }
 
+      // Misconfiguration and deadline aborts are not transient: retrying only
+      // delays the real error and disguises it as a network failure.
+      if (err instanceof OAuthConfigError || signal.aborted) {
+        throw err;
+      }
+
       if (
         attempt === MAX_RETRIES &&
         err instanceof Error &&
@@ -154,7 +384,7 @@ async function performTokenRefresh(
       }
 
       if (attempt < MAX_RETRIES) {
-        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+        await sleep(1000 * attempt, signal);
         continue;
       }
       throw new Error(
@@ -178,12 +408,14 @@ async function performTokenRefresh(
   const finalRefreshToken = data.refresh_token || refreshToken;
 
   // Save new tokens securely
-  const { error: vaultError } = await supabase.rpc("upsert_google_tokens", {
-    p_account_id: accountId,
-    p_access_token: data.access_token,
-    p_refresh_token: finalRefreshToken,
-    p_expires_at: newExpiresAt,
-  });
+  const { error: vaultError } = await supabase
+    .rpc("upsert_google_tokens", {
+      p_account_id: accountId,
+      p_access_token: data.access_token,
+      p_refresh_token: finalRefreshToken,
+      p_expires_at: newExpiresAt,
+    })
+    .abortSignal(signal);
 
   if (vaultError) {
     throw new Error(`Failed to save refreshed tokens: ${vaultError.message}`);
@@ -193,7 +425,8 @@ async function performTokenRefresh(
   await supabase
     .from("google_accounts")
     .update({ token_status: "active", last_used_at: new Date().toISOString() })
-    .eq("id", accountId);
+    .eq("id", accountId)
+    .abortSignal(signal);
 
   return data.access_token;
 }
@@ -249,20 +482,20 @@ const getValidAccessTokenCached = cache(async function getValidAccessToken(
     throw new Error("Tokens not found for this account");
   }
 
-  const expiresAt = new Date(expires_at).getTime();
-  const isExpired = Date.now() >= expiresAt - EXPIRY_BUFFER_MS;
-
-  if (!isExpired && access_token) {
+  if (isStillValid(expires_at) && access_token) {
     // 2a. Still valid, return decrypted access token
     return access_token;
   }
 
-  // 2b. Expired, we need to refresh. Ownership was already enforced by the
-  // RLS-scoped account lookup above and get_valid_token_metadata's internal
-  // check, so the service-role refresh path below is safe.
-  return withRefreshLock(accountId, () =>
-    readAndExchangeRefreshToken(accountId),
-  );
+  // 2b. Expired as far as this (unsynchronized) read can tell. The refresh path
+  // re-reads the token state inside the lease before exchanging anything, so a
+  // caller that queued behind a refresh which has since landed gets the
+  // persisted token instead of triggering a duplicate Google exchange.
+  //
+  // Ownership was already enforced by the RLS-scoped account lookup above and
+  // get_valid_token_metadata's internal check, so the service-role refresh path
+  // is safe.
+  return refreshAccessToken(accountId);
 });
 
 /**
@@ -273,7 +506,7 @@ const getValidAccessTokenCached = cache(async function getValidAccessToken(
  */
 export function getValidAccessToken(
   accountId: string,
-  options?: { asBackgroundJob?: boolean },
+  options?: TokenAccessOptions,
 ): Promise<string> {
   return getValidAccessTokenCached(
     accountId,
@@ -287,12 +520,15 @@ export function getValidAccessToken(
  * (or revoked if Google rejects the refresh token).
  *
  * Not memoized: unlike getValidAccessToken this never returns a cached token.
- * It does, however, join an already in-flight refresh for the same account
- * rather than issuing a duplicate request to Google — the token it hands back
- * is newly minted either way.
+ * It deliberately bypasses the opportunistic per-process lock — that lock can
+ * hand back an already-persisted token — and goes straight to the distributed
+ * lease, which understands the "must be newly minted" requirement. It still
+ * joins a refresh that another caller already has in flight rather than issuing
+ * a duplicate request to Google, because that refresh's result is newly minted
+ * either way.
  *
  * Ownership is verified via an RLS-scoped lookup before the service-role
- * token path is used (get_decrypted_refresh_token is service-role-only).
+ * token path is used (the lease RPC is service-role-only).
  *
  * @param accountId - The ID of the Google account
  */
@@ -309,8 +545,8 @@ export async function forceRefreshToken(accountId: string): Promise<string> {
     throw new Error("Not authorized to refresh this account");
   }
 
-  return withRefreshLock(accountId, () =>
-    readAndExchangeRefreshToken(accountId),
+  return withRefreshDeadline(accountId, (signal) =>
+    refreshUnderLease(accountId, true, signal),
   );
 }
 
@@ -346,8 +582,7 @@ const isTokenValidCached = cache(async function isTokenValid(
 
   if (error || !data) return false;
 
-  const expiresAt = new Date(data.expires_at).getTime();
-  return Date.now() < expiresAt - EXPIRY_BUFFER_MS;
+  return isStillValid(data.expires_at);
 });
 
 /**
@@ -358,7 +593,7 @@ const isTokenValidCached = cache(async function isTokenValid(
  */
 export function isTokenValid(
   accountId: string,
-  options?: { asBackgroundJob?: boolean },
+  options?: TokenAccessOptions,
 ): Promise<boolean> {
   return isTokenValidCached(accountId, options?.asBackgroundJob === true);
 }
@@ -369,7 +604,7 @@ export function isTokenValid(
  */
 export async function revokeAccount(
   accountId: string,
-  options?: { asBackgroundJob?: boolean },
+  options?: TokenAccessOptions,
 ): Promise<void> {
   const supabase = options?.asBackgroundJob
     ? createServiceClient()
