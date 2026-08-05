@@ -24,6 +24,12 @@ type TokenClient = SupabaseClient<Database>;
 // independently hit Google. Without this lock we'd get a thundering herd that
 // wastes refresh-token quota and, on providers that rotate refresh tokens,
 // can invalidate a token another in-flight refresh is still using.
+//
+// This is intentionally process-global rather than request-scoped: React's
+// cache() only dedupes within a single request, and the herd we care about is
+// made of *separate* requests. Only the resulting access token is shared —
+// never a request-scoped Supabase client — so no caller's auth context can
+// leak into another's.
 const refreshLocks = new Map<string, Promise<string>>();
 
 function withRefreshLock(
@@ -39,6 +45,32 @@ function withRefreshLock(
   });
   refreshLocks.set(accountId, promise);
   return promise;
+}
+
+/**
+ * Reads the stored refresh token with the service role and exchanges it.
+ *
+ * Callers must have already verified ownership of `accountId`:
+ * get_decrypted_refresh_token is service-role-only and performs no RLS check.
+ *
+ * The read lives inside this function (and therefore inside the refresh lock)
+ * on purpose. If it were hoisted above the lock, a caller could read the
+ * refresh token, lose the race to another refresh that rotates it, and then
+ * replay the now-stale token — which Google answers with `invalid_grant`,
+ * causing us to wrongly mark a healthy account as revoked.
+ */
+async function readAndExchangeRefreshToken(accountId: string): Promise<string> {
+  const service = createServiceClient();
+  const { data: refreshToken, error: refreshRpcError } = await service.rpc(
+    "get_decrypted_refresh_token",
+    { p_account_id: accountId },
+  );
+
+  if (refreshRpcError || !refreshToken) {
+    throw new Error("No refresh token available to renew access token");
+  }
+
+  return performTokenRefresh(service, accountId, refreshToken);
 }
 
 /**
@@ -174,14 +206,15 @@ async function performTokenRefresh(
  * after forceRefreshToken() for the same account within one request — the
  * memoized (pre-refresh) token would be returned.
  *
- * @param accountId - The ID of the Google account
- * @param options - Set asBackgroundJob to true when calling from Inngest to bypass RLS
+ * Only primitive arguments are passed to the memoized function: React's cache()
+ * matches arguments by reference, so an options *object* would produce a fresh
+ * cache entry on every call and silently disable memoization.
  */
-export const getValidAccessToken = cache(async function getValidAccessToken(
+const getValidAccessTokenCached = cache(async function getValidAccessToken(
   accountId: string,
-  options?: { asBackgroundJob?: boolean },
+  asBackgroundJob: boolean,
 ): Promise<string> {
-  const supabase = options?.asBackgroundJob
+  const supabase = asBackgroundJob
     ? createServiceClient()
     : await createServerClient();
 
@@ -224,29 +257,39 @@ export const getValidAccessToken = cache(async function getValidAccessToken(
     return access_token;
   }
 
-  // 2b. Expired, we need to refresh. get_decrypted_refresh_token is
-  // service-role-only; ownership was already enforced by the RLS-scoped
-  // account lookup above and get_valid_token_metadata's internal check.
-  const tokenClient = createServiceClient();
-  const { data: refreshToken, error: refreshRpcError } = await tokenClient.rpc(
-    "get_decrypted_refresh_token",
-    { p_account_id: accountId },
-  );
-
-  if (refreshRpcError || !refreshToken) {
-    throw new Error("No refresh token available to renew access token");
-  }
-
+  // 2b. Expired, we need to refresh. Ownership was already enforced by the
+  // RLS-scoped account lookup above and get_valid_token_metadata's internal
+  // check, so the service-role refresh path below is safe.
   return withRefreshLock(accountId, () =>
-    performTokenRefresh(tokenClient, accountId, refreshToken),
+    readAndExchangeRefreshToken(accountId),
   );
 });
 
 /**
+ * Gets a valid access token for the given account, refreshing it if needed.
+ *
+ * @param accountId - The ID of the Google account
+ * @param options - Set asBackgroundJob to true when calling from Inngest to bypass RLS
+ */
+export function getValidAccessToken(
+  accountId: string,
+  options?: { asBackgroundJob?: boolean },
+): Promise<string> {
+  return getValidAccessTokenCached(
+    accountId,
+    options?.asBackgroundJob === true,
+  );
+}
+
+/**
  * Forces an immediate token refresh against Google, regardless of expiry.
  * Updates the stored tokens and resets the account's token status to active
- * (or revoked if Google rejects the refresh token). Not cached: every call
- * hits the token endpoint.
+ * (or revoked if Google rejects the refresh token).
+ *
+ * Not memoized: unlike getValidAccessToken this never returns a cached token.
+ * It does, however, join an already in-flight refresh for the same account
+ * rather than issuing a duplicate request to Google — the token it hands back
+ * is newly minted either way.
  *
  * Ownership is verified via an RLS-scoped lookup before the service-role
  * token path is used (get_decrypted_refresh_token is service-role-only).
@@ -266,29 +309,22 @@ export async function forceRefreshToken(accountId: string): Promise<string> {
     throw new Error("Not authorized to refresh this account");
   }
 
-  const service = createServiceClient();
-  const { data: refreshToken, error: refreshRpcError } = await service.rpc(
-    "get_decrypted_refresh_token",
-    { p_account_id: accountId },
-  );
-
-  if (refreshRpcError || !refreshToken) {
-    throw new Error("No refresh token available to renew access token");
-  }
-
   return withRefreshLock(accountId, () =>
-    performTokenRefresh(service, accountId, refreshToken),
+    readAndExchangeRefreshToken(accountId),
   );
 }
 
 /**
  * Checks if an account's token is currently valid without refreshing it.
+ *
+ * Memoized per request via React cache() on primitive arguments only — see the
+ * note on getValidAccessTokenCached.
  */
-export const isTokenValid = cache(async function isTokenValid(
+const isTokenValidCached = cache(async function isTokenValid(
   accountId: string,
-  options?: { asBackgroundJob?: boolean },
+  asBackgroundJob: boolean,
 ): Promise<boolean> {
-  const supabase = options?.asBackgroundJob
+  const supabase = asBackgroundJob
     ? createServiceClient()
     : await createServerClient();
 
@@ -313,6 +349,19 @@ export const isTokenValid = cache(async function isTokenValid(
   const expiresAt = new Date(data.expires_at).getTime();
   return Date.now() < expiresAt - EXPIRY_BUFFER_MS;
 });
+
+/**
+ * Checks if an account's token is currently valid without refreshing it.
+ *
+ * @param accountId - The ID of the Google account
+ * @param options - Set asBackgroundJob to true when calling from Inngest to bypass RLS
+ */
+export function isTokenValid(
+  accountId: string,
+  options?: { asBackgroundJob?: boolean },
+): Promise<boolean> {
+  return isTokenValidCached(accountId, options?.asBackgroundJob === true);
+}
 
 /**
  * Revokes an account's token and removes it from the database.
