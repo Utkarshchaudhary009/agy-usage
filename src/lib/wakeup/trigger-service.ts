@@ -19,8 +19,8 @@ import {
   isKnownWakeupModel,
   type TriggerSource,
   WAKEUP_LIMITS,
-  type WakeupConfig,
 } from "@/lib/types/wakeup";
+import { getWakeupConfig } from "./config";
 import { isOnCooldown } from "./cooldown";
 
 /**
@@ -306,42 +306,16 @@ export async function executeWakeup(
 ): Promise<WakeupResult> {
   const supabase = await createServerClient();
 
-  const { data: config } = await supabase
-    .from("wakeup_configs")
-    .select("*")
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
+  // `getWakeupConfig` is the single read boundary for wakeup config and already
+  // applies the model allowlist, so `selectedModels` here is always safe to send
+  // to Google.
+  const wakeupConfig = await getWakeupConfig(supabase, clerkUserId);
 
-  if (!config) {
-    return {
-      success: true,
-      triggeredModels: 0,
-      failedModels: 0,
-      results: [],
-    };
-  }
-
-  const wakeupConfig: WakeupConfig = {
-    id: config.id,
-    clerkUserId: config.clerk_user_id,
-    enabled: config.enabled,
-    // Re-apply the allowlist at read time: rows written before a model was
-    // retired (or by anything other than the validated config route) must not
-    // widen what the engine sends to Google.
-    selectedModels: (config.selected_models ?? []).filter(isKnownWakeupModel),
-    selectedAccountIds: config.selected_account_ids ?? [],
-    scheduleMode: config.schedule_mode,
-    intervalHours: config.interval_hours,
-    dailyTimes: config.daily_times ?? [],
-    cronExpression: config.cron_expression,
-    customPrompt: config.custom_prompt,
-    maxOutputTokens: config.max_output_tokens,
-    cooldownMinutes: config.cooldown_minutes,
-    wakeOnReset: config.wake_on_reset,
-    updatedAt: config.updated_at,
-  };
-
-  if (!wakeupConfig.enabled || wakeupConfig.selectedModels.length === 0) {
+  if (
+    !wakeupConfig ||
+    !wakeupConfig.enabled ||
+    wakeupConfig.selectedModels.length === 0
+  ) {
     return {
       success: true,
       triggeredModels: 0,

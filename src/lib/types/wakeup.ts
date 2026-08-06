@@ -105,3 +105,7 @@ const UUID_RE =
 export function isUuid(value: string): boolean {
   return UUID_RE.test(value);
 }
+
+// Accepts a 24-hour HH:MM time. Shared by the server-side validator and the
+// client-side schedule picker, so it lives in this isomorphic module.
+export const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;

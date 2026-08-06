@@ -7,13 +7,13 @@ import {
   isKnownWakeupModel,
   isUuid,
   type ScheduleMode,
+  TIME_RE,
   WAKEUP_LIMITS,
   type WakeupConfig,
   type WakeupConfigInput,
 } from "@/lib/types/wakeup";
 import { validateCronExpression } from "./cron";
 
-const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const VALID_MODES: ScheduleMode[] = ["interval", "daily", "custom"];
 
 // Upper bound on how many raw array entries we will even look at, so a payload
@@ -142,7 +142,10 @@ export function rowToConfig(row: ConfigRow): WakeupConfig {
     id: row.id,
     clerkUserId: row.clerk_user_id,
     enabled: row.enabled,
-    selectedModels: row.selected_models ?? [],
+    // Always re-apply the model allowlist at the read boundary: rows written
+    // before a model was retired (or by anything other than the validated
+    // config route) must never widen what the engine sends to Google.
+    selectedModels: (row.selected_models ?? []).filter(isKnownWakeupModel),
     selectedAccountIds: row.selected_account_ids ?? [],
     scheduleMode: row.schedule_mode,
     intervalHours: row.interval_hours,

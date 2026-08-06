@@ -12,12 +12,6 @@ import {
 } from "@/lib/wakeup/config";
 import { requireJsonRequest } from "@/lib/wakeup/request";
 
-const FALLBACKS = {
-  intervalHours: 6,
-  maxOutputTokens: 1,
-  cooldownMinutes: 60,
-} as const;
-
 export async function GET() {
   const { userId } = await auth();
   if (!userId) return unauthorized();
@@ -87,12 +81,5 @@ export async function PUT(req: NextRequest) {
     );
   }
 
-  return NextResponse.json({
-    config,
-    appliedFallbacks: {
-      intervalHours: input.intervalHours || FALLBACKS.intervalHours,
-      maxOutputTokens: input.maxOutputTokens || FALLBACKS.maxOutputTokens,
-      cooldownMinutes: input.cooldownMinutes || FALLBACKS.cooldownMinutes,
-    },
-  });
+  return NextResponse.json({ config });
 }

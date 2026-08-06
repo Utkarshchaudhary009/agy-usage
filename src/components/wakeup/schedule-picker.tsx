@@ -29,8 +29,6 @@ interface SchedulePickerProps {
   disabled?: boolean;
 }
 
-const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
-
 export function SchedulePicker({
   value,
   onChange,
@@ -181,5 +179,3 @@ function CronHint({ expression }: { expression: string }) {
     </p>
   );
 }
-
-export { TIME_RE };
