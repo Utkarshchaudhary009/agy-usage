@@ -317,6 +317,7 @@ export async function triggerAllModels(
 export async function executeWakeup(
   clerkUserId: string,
   triggerSource: TriggerSource = "scheduled",
+  supabaseClient?: SupabaseClient<Database>,
 ): Promise<WakeupResult> {
   // Serialize per user. The cooldown check below is a read that only "commits"
   // when the trigger finishes and writes a log, so without a lock two runs for
@@ -329,7 +330,11 @@ export async function executeWakeup(
     return CONCURRENT_RUN_SKIPPED;
   }
 
-  const supabase = await createServerClient();
+  // `createServerClient()` reads the Clerk session via `auth()`, which only
+  // exists inside a request scope. Scheduled callers (Inngest) have no request,
+  // so they must pass their own client — every query below is explicitly
+  // scoped by `clerk_user_id`, so a service-role client stays tenant-safe.
+  const supabase = supabaseClient ?? (await createServerClient());
 
   try {
     // `getWakeupConfig` is the single read boundary for wakeup config and already
@@ -390,7 +395,12 @@ export async function executeWakeup(
       accounts.length,
       wakeupConfig.selectedModels.length,
     );
-    if (!renewWakeupLock(clerkUserId, lock.lockToken, leaseSecs)) {
+    const renewed = await renewWakeupLock(
+      clerkUserId,
+      lock.lockToken,
+      leaseSecs,
+    );
+    if (!renewed) {
       return CONCURRENT_RUN_SKIPPED;
     }
 

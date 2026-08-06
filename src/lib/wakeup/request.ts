@@ -10,6 +10,18 @@ export type ParsedJsonRequest =
   | { ok: true; body: unknown }
   | { ok: false; response: NextResponse };
 
+export interface RequireJsonRequestOptions {
+  /**
+   * Treat an absent/blank body as `{}` instead of a 400.
+   *
+   * Only for routes where "no body" is a meaningful request (e.g. `POST
+   * /api/wakeup/trigger` meaning "run the whole configured wakeup now"). Never
+   * enable it for routes that overwrite state from the body — an empty payload
+   * would silently reset every field to its default.
+   */
+  allowEmptyBody?: boolean;
+}
+
 /**
  * Reads a JSON request body for a state-changing route.
  *
@@ -26,6 +38,7 @@ export type ParsedJsonRequest =
  */
 export async function requireJsonRequest(
   req: NextRequest,
+  options: RequireJsonRequestOptions = {},
 ): Promise<ParsedJsonRequest> {
   const contentType = req.headers.get("content-type") ?? "";
   if (!contentType.split(";")[0].trim().toLowerCase().endsWith("/json")) {
@@ -57,6 +70,12 @@ export async function requireJsonRequest(
   // Chunked requests omit content-length, so re-check the buffered size.
   if (raw.length > MAX_BODY_BYTES) {
     return { ok: false, response: payloadTooLarge() };
+  }
+
+  // The content-type gate above still ran, so this stays out of reach of
+  // simple-request CSRF.
+  if (options.allowEmptyBody && raw.trim().length === 0) {
+    return { ok: true, body: {} };
   }
 
   try {
