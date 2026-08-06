@@ -6,6 +6,7 @@ import {
   DEFAULT_SELECTED_MODELS,
   isKnownWakeupModel,
   isUuid,
+  SCHEDULE_MODES,
   type ScheduleMode,
   TIME_RE,
   WAKEUP_LIMITS,
@@ -14,16 +15,12 @@ import {
 } from "@/lib/types/wakeup";
 import { validateCronExpression } from "./cron";
 
-const VALID_MODES: ScheduleMode[] = ["interval", "daily", "custom"];
-
 // Upper bound on how many raw array entries we will even look at, so a payload
 // with a million-element array cannot burn CPU before validation rejects it.
 const MAX_RAW_ARRAY_ENTRIES = 500;
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping C0/C1 control characters is exactly the intent
 const CONTROL_CHARS_RE = /[\u0000-\u001f\u007f-\u009f]/g;
-
-export type { WakeupConfigInput };
 
 export interface ValidationResult {
   valid: boolean;
@@ -76,7 +73,8 @@ export function parseWakeupInput(body: unknown): WakeupConfigInput {
   >;
   const modeRaw = b.scheduleMode;
   const scheduleMode: ScheduleMode =
-    typeof modeRaw === "string" && VALID_MODES.includes(modeRaw as ScheduleMode)
+    typeof modeRaw === "string" &&
+    SCHEDULE_MODES.includes(modeRaw as ScheduleMode)
       ? (modeRaw as ScheduleMode)
       : "interval";
 
@@ -181,7 +179,7 @@ export function validateWakeupInput(
 ): ValidationResult {
   const errors: ValidationResult["errors"] = {};
 
-  if (!VALID_MODES.includes(input.scheduleMode)) {
+  if (!SCHEDULE_MODES.includes(input.scheduleMode)) {
     errors.scheduleMode = "Invalid schedule mode.";
   }
 

@@ -13,7 +13,7 @@ function Slider({
   max = 100,
   ...props
 }: React.ComponentProps<typeof SliderPrimitive.Root>) {
-  const _values = Array.isArray(value)
+  const values = Array.isArray(value)
     ? value
     : Array.isArray(defaultValue)
       ? defaultValue
@@ -43,7 +43,7 @@ function Slider({
           className={cn("absolute h-full bg-primary")}
         />
       </SliderPrimitive.Track>
-      {Array.from({ length: _values.length }, (_, i) => (
+      {Array.from({ length: values.length }, (_, i) => (
         <SliderPrimitive.Thumb
           data-slot="slider-thumb"
           // biome-ignore lint/suspicious/noArrayIndexKey: thumbs are positional handles of a fixed-length range, so the index is their only identity

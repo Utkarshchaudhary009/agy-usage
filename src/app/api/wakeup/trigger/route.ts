@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { type NextRequest, NextResponse } from "next/server";
 import { unauthorized } from "@/lib/api/accounts";
 import { createServerClient } from "@/lib/supabase/server";
+import { requireJsonRequest } from "@/lib/wakeup/request";
 import {
   executeWakeup,
   triggerSingleModel,
@@ -27,26 +28,15 @@ export async function POST(req: NextRequest) {
   const { userId } = await auth();
   if (!userId) return unauthorized();
 
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json(
-      {
-        error: "Bad Request",
-        code: "INVALID_JSON",
-        message: "Request body must be valid JSON.",
-      },
-      { status: 400 },
-    );
-  }
+  const parsed = await requireJsonRequest(req);
+  if (!parsed.ok) return parsed.response;
 
   const supabase = await createServerClient();
 
-  if (isSingleTriggerBody(body)) {
+  if (isSingleTriggerBody(parsed.body)) {
     const result = await triggerSingleModel(
-      body.accountId,
-      body.modelId,
+      parsed.body.accountId,
+      parsed.body.modelId,
       "hi",
       1,
       userId,

@@ -7,7 +7,6 @@ import {
   type WakeupAccountOption,
 } from "@/components/wakeup/config-form";
 import { createServerClient } from "@/lib/supabase/server";
-import type { WakeupConfig } from "@/lib/types/wakeup";
 import { buildDefaultConfig, getWakeupConfig } from "@/lib/wakeup/config";
 
 function WakeupSkeleton() {
@@ -23,17 +22,14 @@ function WakeupSkeleton() {
 async function WakeupLoader({ userId }: { userId: string }) {
   const supabase = await createServerClient();
 
-  const [{ data: config }, { data: accounts, error: accountsError }] =
-    await Promise.all([
-      getWakeupConfig(supabase, userId).then((c) => ({
-        data: c ?? buildDefaultConfig(userId),
-      })),
-      supabase
-        .from("google_accounts")
-        .select("id, email, display_name, is_active")
-        .eq("clerk_user_id", userId)
-        .order("added_at", { ascending: true }),
-    ]);
+  const [config, { data: accounts, error: accountsError }] = await Promise.all([
+    getWakeupConfig(supabase, userId),
+    supabase
+      .from("google_accounts")
+      .select("id, email, display_name, is_active")
+      .eq("clerk_user_id", userId)
+      .order("added_at", { ascending: true }),
+  ]);
 
   if (accountsError) {
     console.error("Failed to load accounts for wakeup:", accountsError);
@@ -47,7 +43,10 @@ async function WakeupLoader({ userId }: { userId: string }) {
   }));
 
   return (
-    <ConfigForm initialConfig={config as WakeupConfig} accounts={options} />
+    <ConfigForm
+      initialConfig={config ?? buildDefaultConfig(userId)}
+      accounts={options}
+    />
   );
 }
 

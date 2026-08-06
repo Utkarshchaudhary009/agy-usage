@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServerClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/types/database";
 
-const COOLDONE_BUFFER_MS = 1000;
+const COOLDOWN_BUFFER_MS = 1000;
 
 export async function isOnCooldown(
   clerkUserId: string,
@@ -37,5 +37,5 @@ export async function isOnCooldown(
   }
 
   const lastTriggerMs = new Date(lastLog.created_at).getTime();
-  return lastTriggerMs + cooldownMs + COOLDONE_BUFFER_MS > Date.now();
+  return lastTriggerMs + cooldownMs + COOLDOWN_BUFFER_MS > Date.now();
 }
