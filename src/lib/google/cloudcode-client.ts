@@ -141,6 +141,21 @@ export async function onboardUser(
   );
 }
 
+export interface StreamGenerateOptions {
+  /**
+   * Caller-owned deadline. Aborting it unwinds the whole call — including the
+   * retry/base-URL loop — instead of letting a stalled upstream hold the
+   * request open for the full retry budget.
+   */
+  signal?: AbortSignal;
+}
+
+function abortError(): Error {
+  const err = new Error("Request aborted before completion");
+  err.name = "AbortError";
+  return err;
+}
+
 export async function streamGenerateContent(
   accessToken: string,
   accountId: string,
@@ -148,7 +163,9 @@ export async function streamGenerateContent(
   modelId: string,
   prompt: string,
   maxOutputTokens?: number,
+  options?: StreamGenerateOptions,
 ): Promise<GenerateResponse> {
+  const externalSignal = options?.signal;
   const requestId = randomUUID();
   const sessionId = randomUUID();
   const systemInstruction = {
@@ -249,10 +266,13 @@ export async function streamGenerateContent(
 
   for (const baseUrl of BASE_URLS) {
     for (let attempt = 1; attempt <= MAX_TRIGGER_ATTEMPTS; attempt++) {
+      if (externalSignal?.aborted) throw abortError();
+
       if (attempt > 1) {
         const delay = Math.max(nextRetryDelay, getBackoffDelay(attempt));
         await sleep(delay);
         nextRetryDelay = 0; // Reset for next attempt
+        if (externalSignal?.aborted) throw abortError();
       }
 
       const url = `${baseUrl}${STREAM_PATH}`;
@@ -273,7 +293,9 @@ export async function streamGenerateContent(
             "Accept-Encoding": "gzip",
           },
           body: JSON.stringify(body),
-          signal: controller.signal,
+          signal: externalSignal
+            ? AbortSignal.any([controller.signal, externalSignal])
+            : controller.signal,
         });
 
         try {
@@ -317,6 +339,9 @@ export async function streamGenerateContent(
             }
           } catch (e: unknown) {
             if (e instanceof Error && e.name === "AbortError") {
+              // The caller's deadline fired: partial output must not be
+              // reported as a successful wake-up.
+              if (externalSignal?.aborted) throw abortError();
               if (timedOut) {
                 throw new Error("Stream connection timed out");
               }
@@ -333,6 +358,9 @@ export async function streamGenerateContent(
         throw new Error(`API request failed: ${response.status} - ${text}`);
       } catch (err: unknown) {
         if (err instanceof CloudCodeAuthError) throw err;
+
+        // A caller deadline is terminal: retrying would outlive it.
+        if (externalSignal?.aborted) throw abortError();
 
         lastError = err;
 
