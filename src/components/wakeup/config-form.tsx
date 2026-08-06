@@ -2,7 +2,7 @@
 
 import { Loader2Icon, PowerIcon, RefreshCwIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -60,6 +60,7 @@ export function ConfigForm({ initialConfig, accounts }: ConfigFormProps) {
   const [saving, setSaving] = useState(false);
 
   const hasAccounts = accounts.length > 0;
+  const disabled = !input.enabled;
 
   function update<K extends keyof WakeupConfigInput>(
     key: K,
@@ -77,18 +78,39 @@ export function ConfigForm({ initialConfig, accounts }: ConfigFormProps) {
     }));
   }
 
-  const scheduleState: ScheduleState = {
-    scheduleMode: input.scheduleMode,
-    intervalHours: input.intervalHours,
-    dailyTimes: input.dailyTimes,
-    cronExpression: input.cronExpression,
-  };
+  const scheduleState = useMemo<ScheduleState>(
+    () => ({
+      scheduleMode: input.scheduleMode,
+      intervalHours: input.intervalHours,
+      dailyTimes: input.dailyTimes,
+      cronExpression: input.cronExpression,
+    }),
+    [
+      input.scheduleMode,
+      input.intervalHours,
+      input.dailyTimes,
+      input.cronExpression,
+    ],
+  );
 
-  const nextPreview = scheduleNextPreview(input.scheduleMode, {
-    intervalHours: input.intervalHours,
-    dailyTimes: input.dailyTimes,
-    cronExpression: input.cronExpression,
-  });
+  const nextPreview = useMemo(
+    () =>
+      scheduleNextPreview(input.scheduleMode, {
+        intervalHours: input.intervalHours,
+        dailyTimes: input.dailyTimes,
+        cronExpression: input.cronExpression,
+      }),
+    [
+      input.scheduleMode,
+      input.intervalHours,
+      input.dailyTimes,
+      input.cronExpression,
+    ],
+  );
+
+  function resetForm() {
+    setInput(toInput(initialConfig));
+  }
 
   async function onSave() {
     setSaving(true);
@@ -158,6 +180,7 @@ export function ConfigForm({ initialConfig, accounts }: ConfigFormProps) {
               <ModelSelector
                 selected={input.selectedModels}
                 onChange={(models) => update("selectedModels", models)}
+                disabled={disabled}
               />
             </section>
 
@@ -177,6 +200,7 @@ export function ConfigForm({ initialConfig, accounts }: ConfigFormProps) {
                         <Checkbox
                           id={inputId}
                           checked={checked}
+                          disabled={disabled}
                           onCheckedChange={(v) =>
                             toggleAccount(acc.id, v === true)
                           }
@@ -213,6 +237,7 @@ export function ConfigForm({ initialConfig, accounts }: ConfigFormProps) {
                   update("dailyTimes", next.dailyTimes);
                   update("cronExpression", next.cronExpression);
                 }}
+                disabled={disabled}
               />
               <p className="text-xs text-muted-foreground">{nextPreview}</p>
             </section>
@@ -223,6 +248,7 @@ export function ConfigForm({ initialConfig, accounts }: ConfigFormProps) {
                 <Input
                   id="prompt"
                   value={input.customPrompt}
+                  disabled={disabled}
                   onChange={(e) => update("customPrompt", e.target.value)}
                   placeholder="hi"
                 />
@@ -235,6 +261,7 @@ export function ConfigForm({ initialConfig, accounts }: ConfigFormProps) {
                   min={1}
                   max={8192}
                   value={input.maxOutputTokens}
+                  disabled={disabled}
                   onChange={(e) =>
                     update("maxOutputTokens", Number(e.target.value) || 1)
                   }
@@ -248,6 +275,7 @@ export function ConfigForm({ initialConfig, accounts }: ConfigFormProps) {
                   min={0}
                   max={1440}
                   value={input.cooldownMinutes}
+                  disabled={disabled}
                   onChange={(e) =>
                     update("cooldownMinutes", Number(e.target.value) || 0)
                   }
@@ -258,6 +286,7 @@ export function ConfigForm({ initialConfig, accounts }: ConfigFormProps) {
                   checked={input.wakeOnReset}
                   onCheckedChange={(v) => update("wakeOnReset", v === true)}
                   id="wake-on-reset"
+                  disabled={disabled}
                 />
                 <Label
                   htmlFor="wake-on-reset"
@@ -274,7 +303,10 @@ export function ConfigForm({ initialConfig, accounts }: ConfigFormProps) {
       <div className="flex items-center justify-end gap-3">
         <Button
           variant="outline"
-          onClick={() => router.refresh()}
+          onClick={() => {
+            resetForm();
+            router.refresh();
+          }}
           disabled={saving}
         >
           <RefreshCwIcon />
