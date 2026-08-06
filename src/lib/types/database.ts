@@ -399,6 +399,28 @@ export interface Database {
         };
         Returns: boolean;
       };
+      acquire_wakeup_lock: {
+        Args: {
+          p_user_id: string;
+          p_ttl_seconds?: number;
+        };
+        Returns: Json;
+      };
+      renew_wakeup_lock: {
+        Args: {
+          p_user_id: string;
+          p_lock_token: string;
+          p_ttl_seconds?: number;
+        };
+        Returns: boolean;
+      };
+      release_wakeup_lock: {
+        Args: {
+          p_user_id: string;
+          p_lock_token: string;
+        };
+        Returns: boolean;
+      };
     };
     Enums: {
       [_ in never]: never;

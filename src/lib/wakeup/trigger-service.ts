@@ -22,6 +22,20 @@ import {
 } from "@/lib/types/wakeup";
 import { getWakeupConfig } from "./config";
 import { isOnCooldown } from "./cooldown";
+import {
+  acquireWakeupLock,
+  estimateWakeupLeaseSeconds,
+  releaseWakeupLock,
+  renewWakeupLock,
+} from "./lock";
+
+const CONCURRENT_RUN_SKIPPED: WakeupResult = {
+  success: true,
+  triggeredModels: 0,
+  failedModels: 0,
+  results: [],
+  cooldownSkipped: true,
+};
 
 /**
  * Client-safe failure reasons.
@@ -304,82 +318,107 @@ export async function executeWakeup(
   clerkUserId: string,
   triggerSource: TriggerSource = "scheduled",
 ): Promise<WakeupResult> {
+  // Serialize per user. The cooldown check below is a read that only "commits"
+  // when the trigger finishes and writes a log, so without a lock two runs for
+  // the same user (a manual trigger + a scheduled one, or two scheduled retries
+  // emitted by the Inngest fan-out) can both pass the check and both call
+  // Google. The lease spans the whole read -> trigger -> log sequence. See
+  // migration 010.
+  const lock = await acquireWakeupLock(clerkUserId);
+  if (!lock.granted) {
+    return CONCURRENT_RUN_SKIPPED;
+  }
+
   const supabase = await createServerClient();
 
-  // `getWakeupConfig` is the single read boundary for wakeup config and already
-  // applies the model allowlist, so `selectedModels` here is always safe to send
-  // to Google.
-  const wakeupConfig = await getWakeupConfig(supabase, clerkUserId);
+  try {
+    // `getWakeupConfig` is the single read boundary for wakeup config and already
+    // applies the model allowlist, so `selectedModels` here is always safe to send
+    // to Google.
+    const wakeupConfig = await getWakeupConfig(supabase, clerkUserId);
 
-  if (
-    !wakeupConfig ||
-    !wakeupConfig.enabled ||
-    wakeupConfig.selectedModels.length === 0
-  ) {
-    return {
-      success: true,
-      triggeredModels: 0,
-      failedModels: 0,
-      results: [],
-    };
-  }
+    if (
+      !wakeupConfig ||
+      !wakeupConfig.enabled ||
+      wakeupConfig.selectedModels.length === 0
+    ) {
+      return {
+        success: true,
+        triggeredModels: 0,
+        failedModels: 0,
+        results: [],
+      };
+    }
 
-  const onCooldown = await isOnCooldown(clerkUserId, supabase);
-  if (onCooldown) {
-    return {
-      success: true,
-      triggeredModels: 0,
-      failedModels: 0,
-      results: [],
-      cooldownSkipped: true,
-    };
-  }
+    const onCooldown = await isOnCooldown(clerkUserId, supabase);
+    if (onCooldown) {
+      return {
+        success: true,
+        triggeredModels: 0,
+        failedModels: 0,
+        results: [],
+        cooldownSkipped: true,
+      };
+    }
 
-  const accountQuery = supabase
-    .from("google_accounts")
-    .select("id, email, token_status")
-    .eq("clerk_user_id", clerkUserId)
-    .eq("is_active", true)
-    .eq("token_status", "active");
+    const accountQuery = supabase
+      .from("google_accounts")
+      .select("id, email, token_status")
+      .eq("clerk_user_id", clerkUserId)
+      .eq("is_active", true)
+      .eq("token_status", "active");
 
-  if (wakeupConfig.selectedAccountIds.length > 0) {
-    accountQuery.in("id", wakeupConfig.selectedAccountIds);
-  }
+    if (wakeupConfig.selectedAccountIds.length > 0) {
+      accountQuery.in("id", wakeupConfig.selectedAccountIds);
+    }
 
-  const { data: accounts, error: accountsError } = await accountQuery;
+    const { data: accounts, error: accountsError } = await accountQuery;
 
-  if (accountsError || !accounts) {
-    console.error("Failed to load accounts for wakeup:", accountsError);
-    return {
-      success: false,
-      triggeredModels: 0,
-      failedModels: 0,
-      results: [],
-    };
-  }
+    if (accountsError || !accounts) {
+      console.error("Failed to load accounts for wakeup:", accountsError);
+      return {
+        success: false,
+        triggeredModels: 0,
+        failedModels: 0,
+        results: [],
+      };
+    }
 
-  const allResults: TriggerResult[] = [];
-
-  for (const account of accounts) {
-    const results = await triggerAllModels(
-      account.id,
-      wakeupConfig.selectedModels,
-      wakeupConfig.customPrompt,
-      wakeupConfig.maxOutputTokens,
-      clerkUserId,
-      supabase,
-      triggerSource,
+    // Cover the real fan-out rather than the base TTL: if the lease expires
+    // mid-run a second execution could start and double-trigger.
+    const leaseSecs = estimateWakeupLeaseSeconds(
+      accounts.length,
+      wakeupConfig.selectedModels.length,
     );
-    allResults.push(...results);
+    if (!renewWakeupLock(clerkUserId, lock.lockToken, leaseSecs)) {
+      return CONCURRENT_RUN_SKIPPED;
+    }
+
+    const allResults: TriggerResult[] = [];
+
+    for (const account of accounts) {
+      const results = await triggerAllModels(
+        account.id,
+        wakeupConfig.selectedModels,
+        wakeupConfig.customPrompt,
+        wakeupConfig.maxOutputTokens,
+        clerkUserId,
+        supabase,
+        triggerSource,
+      );
+      allResults.push(...results);
+    }
+
+    const triggeredModels = allResults.filter((r) => r.success).length;
+    const failedModels = allResults.filter((r) => !r.success).length;
+
+    return {
+      success: failedModels === 0,
+      triggeredModels,
+      failedModels,
+      results: allResults,
+    };
+  } finally {
+    await releaseWakeupLock(clerkUserId, lock.lockToken);
   }
-
-  const triggeredModels = allResults.filter((r) => r.success).length;
-  const failedModels = allResults.filter((r) => !r.success).length;
-
-  return {
-    success: failedModels === 0,
-    triggeredModels,
-    failedModels,
-    results: allResults,
-  };
 }
