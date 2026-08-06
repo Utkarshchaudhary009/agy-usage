@@ -174,7 +174,12 @@ export async function triggerSingleModel(
   // Only allowlisted models are ever sent to Google — `modelId` can come
   // straight from a request body or from a stored (possibly stale) config row.
   if (!isKnownWakeupModel(modelId)) {
-    return failure(accountId, modelId, 0, "INVALID_MODEL");
+    const result = failure(accountId, modelId, 0, "INVALID_MODEL");
+    // `accountId` here can be an arbitrary value (e.g. a forged request body),
+    // so it is not safe to store as a FK reference into `google_accounts`. Log
+    // the attempt with a NULL `account_id` to avoid a foreign-key violation.
+    await logWakeupResult(supabase, clerkUserId, result, triggerSource, null);
+    return result;
   }
 
   if (!(await isOwnedAccount(supabase, clerkUserId, accountId))) {
@@ -256,7 +261,13 @@ export async function triggerSingleModel(
     clearTimeout(timeoutId);
   }
 
-  await logWakeupResult(supabase, clerkUserId, result, triggerSource);
+  await logWakeupResult(
+    supabase,
+    clerkUserId,
+    result,
+    triggerSource,
+    accountId,
+  );
   return result;
 }
 
@@ -265,11 +276,12 @@ async function logWakeupResult(
   clerkUserId: string,
   result: TriggerResult,
   triggerSource: TriggerSource,
+  accountId: string | null,
 ): Promise<void> {
   try {
     await supabase.from("wakeup_logs").insert({
       clerk_user_id: clerkUserId,
-      account_id: result.accountId,
+      account_id: accountId,
       model_id: result.modelId,
       trigger_source: triggerSource,
       success: result.success,

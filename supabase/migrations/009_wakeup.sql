@@ -38,6 +38,10 @@ CREATE TABLE public.wakeup_logs (
 
 CREATE INDEX idx_wakeup_logs_time
   ON public.wakeup_logs (clerk_user_id, created_at DESC);
+-- Index the foreign key so ON DELETE CASCADE (when a Google account is
+-- removed) and any future per-account lookups don't seq-scan the log table.
+CREATE INDEX idx_wakeup_logs_account
+  ON public.wakeup_logs (account_id);
 CREATE INDEX idx_wakeup_configs_user
   ON public.wakeup_configs (clerk_user_id);
 
