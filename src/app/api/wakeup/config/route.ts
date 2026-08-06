@@ -14,7 +14,8 @@ import { requireJsonRequest } from "@/lib/wakeup/request";
 
 export async function GET() {
   const { userId } = await auth();
-  if (!userId) return unauthorized();
+  if (!userId)
+    return unauthorized("You must be logged in to view wakeup configuration.");
 
   const supabase = await createServerClient();
   const config = await getWakeupConfig(supabase, userId);
@@ -27,7 +28,8 @@ export async function GET() {
 
 export async function PUT(req: NextRequest) {
   const { userId } = await auth();
-  if (!userId) return unauthorized();
+  if (!userId)
+    return unauthorized("You must be logged in to save wakeup configuration.");
 
   const parsed = await requireJsonRequest(req);
   if (!parsed.ok) return parsed.response;

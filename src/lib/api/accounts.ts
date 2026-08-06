@@ -27,12 +27,18 @@ export function errorJson(
   return NextResponse.json(body, { status, headers });
 }
 
-export function unauthorized() {
+/**
+ * 401 for a request without an authenticated Clerk session.
+ *
+ * `message` is surfaced verbatim in the UI, so callers should pass
+ * wording that matches what they actually guard.
+ */
+export function unauthorized(message = "You must be logged in.") {
   return errorJson(
     {
       error: "Unauthorized",
       code: "UNAUTHORIZED",
-      message: "You must be logged in to manage accounts.",
+      message,
     },
     401,
   );

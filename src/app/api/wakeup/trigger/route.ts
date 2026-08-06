@@ -40,7 +40,7 @@ function isSingleTriggerBody(body: unknown): body is SingleTriggerBody {
 
 export async function POST(req: NextRequest) {
   const { userId } = await auth();
-  if (!userId) return unauthorized();
+  if (!userId) return unauthorized("You must be logged in to trigger wakeup.");
 
   // A body-less POST is the documented "wake everything up now" call, so an
   // empty payload is not an error here.
