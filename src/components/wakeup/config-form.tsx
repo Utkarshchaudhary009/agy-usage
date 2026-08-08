@@ -12,7 +12,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { WakeupConfig, WakeupConfigInput } from "@/lib/types/wakeup";
+import type {
+  WakeupAccount,
+  WakeupConfig,
+  WakeupConfigInput,
+} from "@/lib/types/wakeup";
 import { cn, inputClass } from "@/lib/utils";
 import { WAKEUP_MODELS } from "@/lib/wakeup/models";
 import type { ScheduleMode } from "@/lib/wakeup/schedule-evaluator";
@@ -24,15 +28,9 @@ import {
 import { ModelSelector } from "./model-selector";
 import { SchedulePicker } from "./schedule-picker";
 
-interface LinkedAccount {
-  id: string;
-  email: string | null;
-  displayName: string | null;
-}
-
 interface ConfigFormProps {
   config: WakeupConfig | null;
-  accounts: LinkedAccount[];
+  accounts: WakeupAccount[];
 }
 
 function Switch({
@@ -66,7 +64,7 @@ function Switch({
   );
 }
 
-function accountLabel(account: LinkedAccount): string {
+function accountLabel(account: WakeupAccount): string {
   return account.displayName || account.email || "Unknown account";
 }
 

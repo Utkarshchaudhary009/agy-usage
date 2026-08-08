@@ -1,11 +1,31 @@
 import "server-only";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { streamGenerateContent } from "@/lib/google/cloudcode-client";
 import { resolveProjectId } from "@/lib/google/project-resolver";
 import { getValidAccessToken } from "@/lib/google/token-manager";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
+import type { Database } from "@/lib/types/database";
 import type { TriggerAllResult, TriggerSingleResult } from "@/lib/types/wakeup";
 import { getWakeupConfig } from "./config";
 import { getCooldownStatus } from "./cooldown";
+
+// Returns the calling user's own linked account ids. Used to expand an empty
+// account selection ("trigger all my accounts") into concrete targets.
+async function getClerkAccountIds(
+  supabase: SupabaseClient<Database>,
+  clerkUserId: string,
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("google_accounts")
+    .select("id")
+    .eq("clerk_user_id", clerkUserId);
+
+  if (error) {
+    console.error("Failed to load accounts for wakeup:", error);
+    return [];
+  }
+  return (data ?? []).map((row) => row.id);
+}
 
 export async function triggerSingleModel(
   accountId: string,
@@ -129,7 +149,14 @@ export async function executeWakeup(
     };
   }
 
-  if (config.selectedAccountIds.length === 0) {
+  // An empty selection means "all of my linked accounts" (per the config UI).
+  // Resolve them here so the rest of the flow can treat the list uniformly.
+  const targetAccountIds =
+    config.selectedAccountIds.length > 0
+      ? config.selectedAccountIds
+      : await getClerkAccountIds(supabase, clerkUserId);
+
+  if (targetAccountIds.length === 0) {
     return {
       clerkUserId,
       results: [],
@@ -140,7 +167,7 @@ export async function executeWakeup(
 
   const allResults: TriggerSingleResult[] = [];
 
-  for (const accountId of config.selectedAccountIds) {
+  for (const accountId of targetAccountIds) {
     const results = await triggerAllModels(
       accountId,
       config.selectedModels,

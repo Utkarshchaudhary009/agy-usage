@@ -4,13 +4,8 @@ import { Suspense } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ConfigForm } from "@/components/wakeup/config-form";
 import { createServerClient } from "@/lib/supabase/server";
+import type { WakeupAccount } from "@/lib/types/wakeup";
 import { getWakeupConfig } from "@/lib/wakeup/config";
-
-interface LinkedAccount {
-  id: string;
-  email: string | null;
-  displayName: string | null;
-}
 
 function WakeupSkeleton() {
   return (
@@ -38,7 +33,7 @@ async function WakeupLoader({ userId }: { userId: string }) {
     console.error("Failed to load accounts:", accountsResult.error);
   }
 
-  const accounts: LinkedAccount[] = (accountsResult.data ?? []).map((row) => ({
+  const accounts: WakeupAccount[] = (accountsResult.data ?? []).map((row) => ({
     id: row.id,
     email: row.email,
     displayName: row.display_name,

@@ -1,6 +1,12 @@
 import type { ScheduleMode } from "@/lib/wakeup/schedule-evaluator";
 
-export type { ScheduleMode } from "@/lib/wakeup/schedule-evaluator";
+export type { ScheduleMode };
+
+export interface WakeupAccount {
+  id: string;
+  email: string | null;
+  displayName: string | null;
+}
 
 export interface WakeupConfig {
   id: string;

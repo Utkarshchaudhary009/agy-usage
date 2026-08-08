@@ -2,7 +2,6 @@ import { auth } from "@clerk/nextjs/server";
 import { type NextRequest, NextResponse } from "next/server";
 import { errorJson, internalError, unauthorized } from "@/lib/api/accounts";
 import { createServerClient } from "@/lib/supabase/server";
-import type { WakeupConfigInput } from "@/lib/types/wakeup";
 import { getWakeupConfig, saveWakeupConfig } from "@/lib/wakeup/config";
 
 export async function GET() {
@@ -52,7 +51,7 @@ export async function PUT(req: NextRequest) {
     const result = await saveWakeupConfig(
       supabase,
       userId,
-      body as WakeupConfigInput,
+      body,
       ownedAccountIds,
     );
 
