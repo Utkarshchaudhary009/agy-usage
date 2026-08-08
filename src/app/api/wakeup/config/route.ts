@@ -1,3 +1,4 @@
+import "server-only";
 import { auth } from "@clerk/nextjs/server";
 import { type NextRequest, NextResponse } from "next/server";
 import { errorJson, internalError, unauthorized } from "@/lib/api/accounts";
@@ -57,7 +58,11 @@ export async function PUT(req: NextRequest) {
 
     if (!result.ok) {
       return errorJson(
-        { error: result.error, code: result.code, message: result.error },
+        {
+          error: result.error,
+          code: result.code,
+          message: "Could not save your wakeup configuration.",
+        },
         400,
       );
     }

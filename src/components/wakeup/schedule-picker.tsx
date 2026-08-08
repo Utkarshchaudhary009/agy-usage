@@ -1,7 +1,7 @@
 "use client";
 
 import { Plus, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn, inputClass } from "@/lib/utils";
 import type { ScheduleMode } from "@/lib/wakeup/schedule-evaluator";
 import {
@@ -46,11 +46,21 @@ export function SchedulePicker({
     return `dt-${nextId.current}`;
   };
 
+  const internalChange = useRef(false);
+
   const [timeItems, setTimeItems] = useState<{ id: string; value: string }[]>(
     () => dailyTimes.map((t, i) => ({ id: `dt-${i + 1}`, value: t })),
   );
 
+  useEffect(() => {
+    if (!internalChange.current) {
+      setTimeItems(dailyTimes.map((t, i) => ({ id: `dt-${i + 1}`, value: t })));
+    }
+    internalChange.current = false;
+  }, [dailyTimes]);
+
   const addDailyTime = () => {
+    internalChange.current = true;
     const used = new Set(timeItems.map((t) => t.value));
     const candidate = ["09:00", "12:00", "15:00", "18:00", "21:00"].find(
       (t) => !used.has(t),
@@ -61,12 +71,14 @@ export function SchedulePicker({
   };
 
   const updateDailyTime = (id: string, value: string) => {
+    internalChange.current = true;
     const next = timeItems.map((t) => (t.id === id ? { ...t, value } : t));
     setTimeItems(next);
     onDailyTimesChange(next.map((t) => t.value));
   };
 
   const removeDailyTime = (id: string) => {
+    internalChange.current = true;
     const next = timeItems.filter((t) => t.id !== id);
     setTimeItems(next);
     onDailyTimesChange(next.map((t) => t.value));

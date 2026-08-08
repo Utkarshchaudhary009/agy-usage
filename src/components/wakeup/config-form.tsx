@@ -2,7 +2,7 @@
 
 import { Clock, Save } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -103,6 +103,21 @@ export function ConfigForm({ config, accounts }: ConfigFormProps) {
 
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    if (!config) return;
+    setEnabled(config.enabled);
+    setSelectedModels(config.selectedModels);
+    setSelectedAccountIds(config.selectedAccountIds);
+    setScheduleMode(config.scheduleMode);
+    setIntervalHours(config.intervalHours);
+    setDailyTimes(config.dailyTimes);
+    setCronExpression(config.cronExpression ?? "");
+    setCustomPrompt(config.customPrompt);
+    setMaxOutputTokens(config.maxOutputTokens);
+    setCooldownMinutes(config.cooldownMinutes);
+    setWakeOnReset(config.wakeOnReset);
+  }, [config]);
+
   const nextTrigger = useMemo(() => {
     const next = getNextTriggerTime(new Date(), {
       scheduleMode,
@@ -126,7 +141,8 @@ export function ConfigForm({ config, accounts }: ConfigFormProps) {
     );
   };
 
-  const handleSave = async () => {
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!canSave) return;
     setSaving(true);
     const payload: WakeupConfigInput = {
@@ -170,7 +186,7 @@ export function ConfigForm({ config, accounts }: ConfigFormProps) {
   };
 
   return (
-    <div className="flex flex-col gap-6">
+    <form onSubmit={handleSave} className="flex flex-col gap-6">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-4">
           <div>
@@ -364,11 +380,11 @@ export function ConfigForm({ config, accounts }: ConfigFormProps) {
       </Card>
 
       <div className="flex items-center justify-end gap-3">
-        <Button onClick={handleSave} disabled={!canSave}>
+        <Button type="submit" disabled={!canSave}>
           <Save />
           {saving ? "Saving…" : "Save Configuration"}
         </Button>
       </div>
-    </div>
+    </form>
   );
 }

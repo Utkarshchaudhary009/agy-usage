@@ -32,6 +32,12 @@ AS $$
 DECLARE
   updated_count integer;
 BEGIN
+  IF current_setting('request.jwt.claims', true)::json->>'role' != 'service_role' THEN
+    IF requesting_user_id() IS DISTINCT FROM p_clerk_user_id THEN
+      RETURN false;
+    END IF;
+  END IF;
+
   UPDATE public.wakeup_configs
   SET last_run_started_at = NOW()
   WHERE clerk_user_id = p_clerk_user_id

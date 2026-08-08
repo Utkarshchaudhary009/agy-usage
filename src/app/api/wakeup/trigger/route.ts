@@ -1,9 +1,11 @@
+import "server-only";
 import { auth } from "@clerk/nextjs/server";
 import { type NextRequest, NextResponse } from "next/server";
 import { errorJson, internalError, unauthorized } from "@/lib/api/accounts";
 import { enforceRateLimit } from "@/lib/api/rate-limit";
 import { createServerClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/utils";
+import { getWakeupConfig } from "@/lib/wakeup/config";
 import { isWakeupModelId } from "@/lib/wakeup/models";
 import {
   executeWakeup,
@@ -75,11 +77,13 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      const config = await getWakeupConfig(supabase, userId);
+
       const result = await triggerSingleModel(
         body.accountId,
         body.modelId,
-        "hi",
-        1,
+        config?.customPrompt ?? "hi",
+        config?.maxOutputTokens ?? 1,
       );
 
       await supabase.from("wakeup_logs").insert({

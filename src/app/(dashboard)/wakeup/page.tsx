@@ -1,3 +1,4 @@
+import "server-only";
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
@@ -31,6 +32,7 @@ async function WakeupLoader({ userId }: { userId: string }) {
 
   if (accountsResult.error) {
     console.error("Failed to load accounts:", accountsResult.error);
+    throw new Error("Failed to load accounts");
   }
 
   const accounts: WakeupAccount[] = (accountsResult.data ?? []).map((row) => ({
