@@ -1,6 +1,5 @@
 import "server-only";
 import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ConfigForm } from "@/components/wakeup/config-form";
@@ -45,11 +44,11 @@ async function WakeupLoader({ userId }: { userId: string }) {
 }
 
 export default async function WakeupPage() {
-  const { userId } = await auth();
-
-  if (!userId) {
-    redirect("/sign-in");
-  }
+  // Enforce auth through Clerk rather than a manual redirect: auth.protect()
+  // redirects unauthenticated visitors to sign-in while preserving the current
+  // URL as the post-login return destination (the route is already gated by
+  // middleware, so this is defense-in-depth that also yields the userId).
+  const { userId } = await auth.protect();
 
   return (
     <div className="flex flex-col gap-6">
