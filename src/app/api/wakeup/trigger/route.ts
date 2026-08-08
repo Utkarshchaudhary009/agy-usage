@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { type NextRequest, NextResponse } from "next/server";
 import { errorJson, internalError, unauthorized } from "@/lib/api/accounts";
+import { enforceRateLimit } from "@/lib/api/rate-limit";
 import { createServerClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/utils";
 import { isWakeupModelId } from "@/lib/wakeup/models";
@@ -12,6 +13,17 @@ import {
 export async function POST(req: NextRequest) {
   const { userId } = await auth();
   if (!userId) return unauthorized();
+
+  // This endpoint reaches Google for every targeted account/model, so it is
+  // rate limited before any upstream work happens.
+  const limited = await enforceRateLimit({
+    bucket: "wakeup_trigger",
+    identifier: userId,
+    limit: 20,
+    window: "1 h",
+    message: "Too many wakeup triggers. Please wait before triggering again.",
+  });
+  if (limited) return limited;
 
   let body: { accountId?: string; modelId?: string } = {};
   try {
@@ -70,8 +82,7 @@ export async function POST(req: NextRequest) {
         1,
       );
 
-      const logSupabase = await createServerClient();
-      await logSupabase.from("wakeup_logs").insert({
+      await supabase.from("wakeup_logs").insert({
         clerk_user_id: userId,
         account_id: result.accountId,
         model_id: result.modelId,

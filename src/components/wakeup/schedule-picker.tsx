@@ -1,19 +1,13 @@
 "use client";
 
 import { Plus, X } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { cn, inputClass } from "@/lib/utils";
 import type { ScheduleMode } from "@/lib/wakeup/schedule-evaluator";
 import {
   isDailyTime,
   isValidCronExpression,
 } from "@/lib/wakeup/schedule-evaluator";
-
-let dailyTimeIdCounter = 0;
-function nextDailyTimeId(): string {
-  dailyTimeIdCounter += 1;
-  return `dt-${dailyTimeIdCounter}`;
-}
 
 interface SchedulePickerProps {
   mode: ScheduleMode;
@@ -43,9 +37,17 @@ export function SchedulePicker({
   onCronChange,
 }: SchedulePickerProps) {
   // Internal items keep a stable id per time so React keys don't depend on the
-  // array index (times can be reordered, duplicated, or edited in place).
+  // array index (times can be duplicated or edited in place). The id source is
+  // instance-local (not module-level) so multiple mounted pickers and SSR
+  // hydration each get deterministic, non-colliding ids.
+  const nextId = useRef(0);
+  const makeId = () => {
+    nextId.current += 1;
+    return `dt-${nextId.current}`;
+  };
+
   const [timeItems, setTimeItems] = useState<{ id: string; value: string }[]>(
-    () => dailyTimes.map((t) => ({ id: nextDailyTimeId(), value: t })),
+    () => dailyTimes.map((t, i) => ({ id: `dt-${i + 1}`, value: t })),
   );
 
   const addDailyTime = () => {
@@ -53,10 +55,7 @@ export function SchedulePicker({
     const candidate = ["09:00", "12:00", "15:00", "18:00", "21:00"].find(
       (t) => !used.has(t),
     );
-    const next = [
-      ...timeItems,
-      { id: nextDailyTimeId(), value: candidate ?? "08:00" },
-    ];
+    const next = [...timeItems, { id: makeId(), value: candidate ?? "08:00" }];
     setTimeItems(next);
     onDailyTimesChange(next.map((t) => t.value));
   };

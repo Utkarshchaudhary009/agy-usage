@@ -8,7 +8,12 @@ import {
   isDailyTime,
   isValidCronExpression,
   MAX_CRON_LENGTH,
+  type ScheduleMode,
 } from "./schedule-evaluator";
+
+function isScheduleMode(value: unknown): value is ScheduleMode {
+  return value === "interval" || value === "daily" || value === "custom";
+}
 
 // Every list persisted here is later expanded into real work: each account is
 // paired with each model and turned into a sequential upstream request run by
@@ -163,11 +168,7 @@ export function validateWakeupConfig(
   }
 
   const scheduleMode = raw.scheduleMode;
-  if (
-    scheduleMode !== "interval" &&
-    scheduleMode !== "daily" &&
-    scheduleMode !== "custom"
-  ) {
+  if (!isScheduleMode(scheduleMode)) {
     return {
       ok: false,
       error: "scheduleMode must be interval, daily, or custom.",
@@ -175,46 +176,52 @@ export function validateWakeupConfig(
     };
   }
 
-  const intervalHours = Number.parseInt(String(raw.intervalHours), 10);
-  if (
-    !Number.isInteger(intervalHours) ||
-    intervalHours < 1 ||
-    intervalHours > 24
-  ) {
-    return {
-      ok: false,
-      error: "intervalHours must be an integer between 1 and 24.",
-      code: "INVALID_INTERVAL",
-    };
+  // Only the fields relevant to the selected mode are validated and persisted.
+  // A stored config never carries contradictory data (e.g. an interval schedule
+  // with stale daily times), and clients don't have to send every field.
+  let intervalHours = DEFAULT_WAKEUP_CONFIG.intervalHours;
+  if (scheduleMode === "interval") {
+    const parsed = Number.parseInt(String(raw.intervalHours), 10);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 24) {
+      return {
+        ok: false,
+        error: "intervalHours must be an integer between 1 and 24.",
+        code: "INVALID_INTERVAL",
+      };
+    }
+    intervalHours = parsed;
   }
 
-  if (!Array.isArray(raw.dailyTimes) || raw.dailyTimes.length === 0) {
-    return {
-      ok: false,
-      error: "dailyTimes must contain at least one time.",
-      code: "INVALID_DAILY_TIMES",
-    };
-  }
-  if (raw.dailyTimes.length > MAX_DAILY_TIMES) {
-    return {
-      ok: false,
-      error: `Provide at most ${MAX_DAILY_TIMES} daily times.`,
-      code: "INVALID_DAILY_TIMES",
-    };
-  }
-  const dailyTimes = [
-    ...new Set(
-      raw.dailyTimes.filter(
-        (t): t is string => typeof t === "string" && isDailyTime(t),
+  let dailyTimes: string[] = [];
+  if (scheduleMode === "daily") {
+    if (!Array.isArray(raw.dailyTimes) || raw.dailyTimes.length === 0) {
+      return {
+        ok: false,
+        error: "dailyTimes must contain at least one time.",
+        code: "INVALID_DAILY_TIMES",
+      };
+    }
+    if (raw.dailyTimes.length > MAX_DAILY_TIMES) {
+      return {
+        ok: false,
+        error: `Provide at most ${MAX_DAILY_TIMES} daily times.`,
+        code: "INVALID_DAILY_TIMES",
+      };
+    }
+    dailyTimes = [
+      ...new Set(
+        raw.dailyTimes.filter(
+          (t): t is string => typeof t === "string" && isDailyTime(t),
+        ),
       ),
-    ),
-  ];
-  if (dailyTimes.length === 0) {
-    return {
-      ok: false,
-      error: "Every daily time must be in HH:MM (24h) format.",
-      code: "INVALID_DAILY_TIMES",
-    };
+    ];
+    if (dailyTimes.length === 0) {
+      return {
+        ok: false,
+        error: "Every daily time must be in HH:MM (24h) format.",
+        code: "INVALID_DAILY_TIMES",
+      };
+    }
   }
 
   let cronExpression: string | null = null;
