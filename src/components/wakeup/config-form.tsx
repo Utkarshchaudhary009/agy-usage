@@ -2,7 +2,7 @@
 
 import { Clock, Save } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -118,14 +118,21 @@ export function ConfigForm({ config, accounts }: ConfigFormProps) {
     setWakeOnReset(config.wakeOnReset);
   }, [config]);
 
-  const nextTrigger = useMemo(() => {
+  // Computed on the client only: `getNextTriggerTime(new Date(), …)` and
+  // `toLocaleString()` both depend on the runtime clock/locale, which differ
+  // between the server and the hydrating client and would cause a hydration
+  // mismatch. The placeholder renders identically on both sides until the effect
+  // runs.
+  const [nextTrigger, setNextTrigger] = useState("—");
+
+  useEffect(() => {
     const next = getNextTriggerTime(new Date(), {
       scheduleMode,
       intervalHours,
       dailyTimes,
       cronExpression: cronExpression.trim() || null,
     });
-    return next ? next.toLocaleString() : "—";
+    setNextTrigger(next ? next.toLocaleString() : "—");
   }, [scheduleMode, intervalHours, dailyTimes, cronExpression]);
 
   const cronInvalid =

@@ -40,7 +40,10 @@ export function SchedulePicker({
   // array index (times can be duplicated or edited in place). The id source is
   // instance-local (not module-level) so multiple mounted pickers and SSR
   // hydration each get deterministic, non-colliding ids.
-  const nextId = useRef(0);
+  // Start above the indices used by the initial `dt-${i + 1}` items so generated
+  // ids never collide with them (a collision would produce duplicate React keys
+  // when a time is added).
+  const nextId = useRef(dailyTimes.length);
   const makeId = () => {
     nextId.current += 1;
     return `dt-${nextId.current}`;
