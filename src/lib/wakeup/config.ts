@@ -2,11 +2,22 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/types/database";
 import type { WakeupConfig, WakeupConfigInput } from "@/lib/types/wakeup";
+import { isUuid } from "@/lib/utils";
 import { isWakeupModelId } from "./models";
-import { isDailyTime, isValidCronExpression } from "./schedule-evaluator";
+import {
+  isDailyTime,
+  isValidCronExpression,
+  MAX_CRON_LENGTH,
+} from "./schedule-evaluator";
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Every list persisted here is later expanded into real work: each account is
+// paired with each model and turned into a sequential upstream request run by
+// the shared background worker. Unbounded lists are therefore an amplification
+// primitive, not just a storage concern.
+const MAX_SELECTED_MODELS = 20;
+const MAX_SELECTED_ACCOUNTS = 50;
+const MAX_DAILY_TIMES = 48;
+const MAX_PROMPT_LENGTH = 1000;
 
 export const DEFAULT_WAKEUP_CONFIG: WakeupConfigInput = {
   enabled: false,
@@ -54,7 +65,10 @@ export async function getWakeupConfig(
     .maybeSingle();
 
   if (error) {
-    throw new Error(`Failed to load wakeup config: ${error.message}`);
+    // Detail stays server-side: the Postgres message leaks schema and policy
+    // names, and this error can surface in a rendered error boundary.
+    console.error("Failed to load wakeup config:", error);
+    throw new Error("Failed to load wakeup config");
   }
   return data ? rowToConfig(data) : null;
 }
@@ -88,9 +102,22 @@ export function validateWakeupConfig(
       code: "NO_MODELS",
     };
   }
-  const selectedModels = raw.selectedModels.filter(
-    (m): m is string => typeof m === "string" && isWakeupModelId(m),
-  );
+  if (raw.selectedModels.length > MAX_SELECTED_MODELS) {
+    return {
+      ok: false,
+      error: `Select at most ${MAX_SELECTED_MODELS} models.`,
+      code: "INVALID_MODELS",
+    };
+  }
+  // Deduplicate: the trigger service issues one upstream request per entry, so
+  // a repeated model id would multiply the work a single schedule performs.
+  const selectedModels = [
+    ...new Set(
+      raw.selectedModels.filter(
+        (m): m is string => typeof m === "string" && isWakeupModelId(m),
+      ),
+    ),
+  ];
   if (selectedModels.length === 0) {
     return {
       ok: false,
@@ -106,9 +133,17 @@ export function validateWakeupConfig(
       code: "INVALID_ACCOUNTS",
     };
   }
+  if (raw.selectedAccountIds.length > MAX_SELECTED_ACCOUNTS) {
+    return {
+      ok: false,
+      error: `Select at most ${MAX_SELECTED_ACCOUNTS} accounts.`,
+      code: "INVALID_ACCOUNTS",
+    };
+  }
+  const seenAccountIds = new Set<string>();
   const selectedAccountIds: string[] = [];
   for (const id of raw.selectedAccountIds) {
-    if (typeof id !== "string" || !UUID_RE.test(id)) {
+    if (!isUuid(id)) {
       return {
         ok: false,
         error: "One or more account IDs are invalid.",
@@ -122,6 +157,8 @@ export function validateWakeupConfig(
         code: "ACCOUNT_NOT_OWNED",
       };
     }
+    if (seenAccountIds.has(id)) continue;
+    seenAccountIds.add(id);
     selectedAccountIds.push(id);
   }
 
@@ -158,9 +195,20 @@ export function validateWakeupConfig(
       code: "INVALID_DAILY_TIMES",
     };
   }
-  const dailyTimes = raw.dailyTimes.filter(
-    (t): t is string => typeof t === "string" && isDailyTime(t),
-  );
+  if (raw.dailyTimes.length > MAX_DAILY_TIMES) {
+    return {
+      ok: false,
+      error: `Provide at most ${MAX_DAILY_TIMES} daily times.`,
+      code: "INVALID_DAILY_TIMES",
+    };
+  }
+  const dailyTimes = [
+    ...new Set(
+      raw.dailyTimes.filter(
+        (t): t is string => typeof t === "string" && isDailyTime(t),
+      ),
+    ),
+  ];
   if (dailyTimes.length === 0) {
     return {
       ok: false,
@@ -178,6 +226,13 @@ export function validateWakeupConfig(
         ok: false,
         error: "A cron expression is required in custom mode.",
         code: "MISSING_CRON",
+      };
+    }
+    if (expr.length > MAX_CRON_LENGTH) {
+      return {
+        ok: false,
+        error: `Cron expression must be ${MAX_CRON_LENGTH} characters or fewer.`,
+        code: "INVALID_CRON",
       };
     }
     if (!isValidCronExpression(expr)) {
@@ -200,10 +255,10 @@ export function validateWakeupConfig(
       code: "INVALID_PROMPT",
     };
   }
-  if (customPrompt.length > 1000) {
+  if (customPrompt.length > MAX_PROMPT_LENGTH) {
     return {
       ok: false,
-      error: "customPrompt must be 1000 characters or fewer.",
+      error: `customPrompt must be ${MAX_PROMPT_LENGTH} characters or fewer.`,
       code: "INVALID_PROMPT",
     };
   }
@@ -282,9 +337,12 @@ export async function saveWakeupConfig(
   );
 
   if (error) {
+    // The Postgres message can name tables, columns, constraints and policies.
+    // Keep it in the server log and hand the caller a generic failure.
+    console.error("Failed to save wakeup config:", error);
     return {
       ok: false,
-      error: `Failed to save config: ${error.message}`,
+      error: "Could not save your wakeup configuration.",
       code: "SAVE_FAILED",
     };
   }

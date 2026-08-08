@@ -25,7 +25,8 @@ export async function getCooldownStatus(
     .maybeSingle();
 
   if (configError) {
-    throw new Error(`Failed to load wakeup config: ${configError.message}`);
+    console.error("Failed to load wakeup config:", configError);
+    throw new Error("Failed to load wakeup config");
   }
 
   const cooldownMinutes = config?.cooldown_minutes ?? 60;
@@ -39,7 +40,8 @@ export async function getCooldownStatus(
     .maybeSingle();
 
   if (logError) {
-    throw new Error(`Failed to check cooldown: ${logError.message}`);
+    console.error("Failed to check cooldown:", logError);
+    throw new Error("Failed to check cooldown");
   }
 
   if (!lastLog) {
