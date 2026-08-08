@@ -249,6 +249,7 @@ export interface Database {
           max_output_tokens: number;
           cooldown_minutes: number;
           wake_on_reset: boolean;
+          last_run_started_at: string | null;
           updated_at: string;
         };
         Insert: {
@@ -265,6 +266,7 @@ export interface Database {
           max_output_tokens?: number;
           cooldown_minutes?: number;
           wake_on_reset?: boolean;
+          last_run_started_at?: string | null;
           updated_at?: string;
         };
         Update: {
@@ -281,6 +283,7 @@ export interface Database {
           max_output_tokens?: number;
           cooldown_minutes?: number;
           wake_on_reset?: boolean;
+          last_run_started_at?: string | null;
           updated_at?: string;
         };
         Relationships: [];
@@ -396,6 +399,12 @@ export interface Database {
         Args: {
           p_account_id: string;
           p_lock_token: string;
+        };
+        Returns: boolean;
+      };
+      claim_wakeup_run: {
+        Args: {
+          p_clerk_user_id: string;
         };
         Returns: boolean;
       };

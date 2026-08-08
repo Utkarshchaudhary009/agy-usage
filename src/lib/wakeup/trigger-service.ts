@@ -7,7 +7,6 @@ import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/types/database";
 import type { TriggerAllResult, TriggerSingleResult } from "@/lib/types/wakeup";
 import { getWakeupConfig } from "./config";
-import { getCooldownStatus } from "./cooldown";
 
 // Returns the calling user's own linked account ids. Used to expand an empty
 // account selection ("trigger all my accounts") into concrete targets.
@@ -139,18 +138,9 @@ export async function executeWakeup(
     };
   }
 
-  const cooldownStatus = await getCooldownStatus(clerkUserId, options);
-  if (cooldownStatus.onCooldown) {
-    return {
-      clerkUserId,
-      results: [],
-      skipped: true,
-      skipReason: "On cooldown",
-    };
-  }
-
   // An empty selection means "all of my linked accounts" (per the config UI).
-  // Resolve them here so the rest of the flow can treat the list uniformly.
+  // Resolve them here (cheap read) before claiming the cooldown window, so a
+  // no-op run with no target accounts never stamps a cooldown.
   const targetAccountIds =
     config.selectedAccountIds.length > 0
       ? config.selectedAccountIds
@@ -162,6 +152,37 @@ export async function executeWakeup(
       results: [],
       skipped: true,
       skipReason: "No accounts selected",
+    };
+  }
+
+  // Atomically claim the cooldown window *before* doing any trigger work. The
+  // claim is a single UPDATE serialized on the user's row, so a concurrent
+  // wakeup (a manual trigger racing the scheduled Inngest run) that reaches this
+  // point at the same instant loses the claim and is skipped instead of
+  // double-firing against Google. The window is anchored to last_run_started_at,
+  // which is stamped by the claim itself — not by the log row written at the end
+  // of the run — so an in-flight run correctly blocks re-entry.
+  const { data: claimed, error: claimError } = await supabase.rpc(
+    "claim_wakeup_run",
+    { p_clerk_user_id: clerkUserId },
+  );
+
+  if (claimError) {
+    console.error("Failed to claim wakeup run:", claimError);
+    return {
+      clerkUserId,
+      results: [],
+      skipped: true,
+      skipReason: "Failed to claim wakeup run",
+    };
+  }
+
+  if (!claimed) {
+    return {
+      clerkUserId,
+      results: [],
+      skipped: true,
+      skipReason: "On cooldown",
     };
   }
 

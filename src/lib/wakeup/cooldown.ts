@@ -20,7 +20,7 @@ export async function getCooldownStatus(
 
   const { data: config, error: configError } = await supabase
     .from("wakeup_configs")
-    .select("cooldown_minutes")
+    .select("cooldown_minutes, last_run_started_at")
     .eq("clerk_user_id", clerkUserId)
     .maybeSingle();
 
@@ -31,20 +31,12 @@ export async function getCooldownStatus(
 
   const cooldownMinutes = config?.cooldown_minutes ?? 60;
 
-  const { data: lastLog, error: logError } = await supabase
-    .from("wakeup_logs")
-    .select("created_at")
-    .eq("clerk_user_id", clerkUserId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (logError) {
-    console.error("Failed to check cooldown:", logError);
-    throw new Error("Failed to check cooldown");
-  }
-
-  if (!lastLog) {
+  // The cooldown window is anchored to when the last run *started*
+  // (last_run_started_at) rather than when its log row was written. That column
+  // is stamped atomically by claim_wakeup_run() before any trigger work begins,
+  // so an in-flight run is correctly counted as "on cooldown" and concurrent
+  // wakeups cannot both slip past the check.
+  if (!config?.last_run_started_at) {
     return {
       onCooldown: false,
       lastTriggerAt: null,
@@ -52,14 +44,14 @@ export async function getCooldownStatus(
     };
   }
 
-  const lastTriggerAt = new Date(lastLog.created_at);
+  const lastTriggerAt = new Date(config.last_run_started_at);
   const cooldownEndsAt = new Date(
     lastTriggerAt.getTime() + cooldownMinutes * 60 * 1000,
   );
 
   return {
     onCooldown: cooldownEndsAt > new Date(),
-    lastTriggerAt: lastLog.created_at,
+    lastTriggerAt: config.last_run_started_at,
     cooldownEndsAt: cooldownEndsAt.toISOString(),
   };
 }
