@@ -1,22 +1,18 @@
 import type { ScheduleMode, WakeupConfig } from "@/lib/types/wakeup";
-import { isValidCron } from "./cron";
+import { parseCron } from "./cron";
 
 const MAX_LOOKAHEAD_DAYS = 366;
 
-interface CronField {
-  min: number;
-  max: number;
-  /** Maps a 0-7 dow value so both 0 and 7 mean Sunday. */
-  normalize?: (value: number) => number;
-}
+/**
+ * Hard ceiling on cron search iterations. The skip-ahead logic in
+ * `getNextCronTime` stays in the low hundreds even for pathological
+ * expressions; this is a backstop against an unforeseen non-advancing cursor
+ * (e.g. a DST edge) turning into an infinite loop.
+ */
+const MAX_CRON_ITERATIONS = 10_000;
 
-const FIELDS: CronField[] = [
-  { min: 0, max: 59 }, // minute
-  { min: 0, max: 23 }, // hour
-  { min: 1, max: 31 }, // day of month
-  { min: 1, max: 12 }, // month
-  { min: 0, max: 7, normalize: (v) => (v === 7 ? 0 : v) }, // day of week
-];
+/** Strict 24h HH:MM. Rejects values like "99:99" that Date would roll over. */
+const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 /**
  * Computes the next time a wakeup should fire given the config. Returns `null`
@@ -32,9 +28,7 @@ export function getNextTriggerTime(
     case "daily":
       return getNextDailyTime(config.dailyTimes, from);
     case "custom":
-      if (!config.cronExpression || !isValidCron(config.cronExpression)) {
-        return null;
-      }
+      if (!config.cronExpression) return null;
       return getNextCronTime(config.cronExpression, from);
     default:
       return null;
@@ -43,11 +37,11 @@ export function getNextTriggerTime(
 
 function getNextDailyTime(times: string[], from: Date): Date | null {
   const parsed = times
-    .map((t) => /^(\d{2}):(\d{2})$/.exec(t))
+    .map((t) => TIME_RE.exec(t))
     .filter((m): m is RegExpExecArray => m !== null)
     .map((m) => ({
-      h: Number.parseInt(m[1], 10),
-      m: Number.parseInt(m[2], 10),
+      h: Number(m[1]),
+      m: Number(m[2]),
     }))
     .sort((a, b) => a.h - b.h || a.m - b.m);
 
@@ -73,75 +67,49 @@ function getNextDailyTime(times: string[], from: Date): Date | null {
 }
 
 function getNextCronTime(expr: string, from: Date): Date | null {
-  const parts = expr.trim().split(/\s+/);
-  const sets = parts.map((part, i) => expandField(part, FIELDS[i]));
-  if (sets.some((s) => s === null)) return null;
+  const cron = parseCron(expr);
+  if (!cron) return null;
 
-  const start = new Date(from);
-  start.setSeconds(0, 0);
-
-  const cursor = new Date(start);
-  cursor.setMinutes(cursor.getMinutes() + 1, 0, 0);
-
-  const [minuteSet, hourSet, domSet, monthSet, dowSet] = sets as Set<number>[];
+  const cursor = new Date(from);
+  cursor.setSeconds(0, 0);
+  cursor.setMinutes(cursor.getMinutes() + 1);
 
   const limit = cursor.getTime() + MAX_LOOKAHEAD_DAYS * 24 * 60 * 60 * 1000;
-  while (cursor.getTime() <= limit) {
-    const minute = cursor.getMinutes();
-    const hour = cursor.getHours();
-    const dom = cursor.getDate();
-    const month = cursor.getMonth() + 1;
-    const dow = cursor.getDay();
 
+  // Skip ahead by the largest unit that cannot match instead of stepping one
+  // minute at a time. A valid-but-never-matching expression (e.g. "0 0 30 2 *"
+  // — February 30th) previously walked a full year minute by minute: ~527k
+  // iterations of date arithmetic. That runs in a `useMemo` on every keystroke
+  // in the cron input and is exported for server-side use, so it was a cheap
+  // client- and server-side CPU DoS. Skipping keeps it in the low hundreds.
+  for (let i = 0; i < MAX_CRON_ITERATIONS; i++) {
+    if (cursor.getTime() > limit) return null;
+
+    if (!cron.months.has(cursor.getMonth() + 1)) {
+      cursor.setMonth(cursor.getMonth() + 1, 1);
+      cursor.setHours(0, 0, 0, 0);
+      continue;
+    }
     if (
-      minuteSet.has(minute) &&
-      hourSet.has(hour) &&
-      domSet.has(dom) &&
-      monthSet.has(month) &&
-      dowSet.has(dow)
+      !cron.daysOfMonth.has(cursor.getDate()) ||
+      !cron.daysOfWeek.has(cursor.getDay())
     ) {
-      return new Date(cursor);
+      cursor.setDate(cursor.getDate() + 1);
+      cursor.setHours(0, 0, 0, 0);
+      continue;
     }
-    cursor.setMinutes(cursor.getMinutes() + 1, 0, 0);
+    if (!cron.hours.has(cursor.getHours())) {
+      cursor.setHours(cursor.getHours() + 1, 0, 0, 0);
+      continue;
+    }
+    if (!cron.minutes.has(cursor.getMinutes())) {
+      cursor.setMinutes(cursor.getMinutes() + 1, 0, 0);
+      continue;
+    }
+    return new Date(cursor);
   }
+
   return null;
-}
-
-function expandField(part: string, field: CronField): Set<number> | null {
-  const result = new Set<number>();
-  const stepParts = part.split("/");
-  if (stepParts.length > 2) return null;
-  const range = stepParts[0];
-  const step = stepParts[1] ? Number.parseInt(stepParts[1], 10) : 1;
-  if (!step || step < 1) return null;
-
-  const addRange = (lo: number, hi: number) => {
-    if (lo < field.min || hi > field.max || lo > hi) return false;
-    for (let v = lo; v <= hi; v += step) {
-      result.add(field.normalize ? field.normalize(v) : v);
-    }
-    return true;
-  };
-
-  if (range === "*") {
-    return addRange(field.min, field.max) ? result : null;
-  }
-
-  for (const token of range.split(",")) {
-    if (token.includes("-")) {
-      const [loStr, hiStr] = token.split("-");
-      const lo = Number.parseInt(loStr, 10);
-      const hi = Number.parseInt(hiStr, 10);
-      if (Number.isNaN(lo) || Number.isNaN(hi)) return null;
-      if (!addRange(lo, hi)) return null;
-    } else {
-      const value = Number.parseInt(token, 10);
-      if (Number.isNaN(value)) return null;
-      if (value < field.min || value > field.max) return null;
-      result.add(field.normalize ? field.normalize(value) : value);
-    }
-  }
-  return result.size > 0 ? result : null;
 }
 
 /** Human-readable summary of a schedule, e.g. "Every 6 hours". */
