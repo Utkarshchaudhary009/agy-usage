@@ -103,7 +103,24 @@ export async function PUT(req: NextRequest) {
     .select()
     .single();
 
-  if (error) return internalError("save wakeup config", error);
+  if (error) {
+    // 23514 = check_violation. The wakeup_configs_validate_accounts trigger
+    // (migration 010) rejects any selected_account_ids entry that no longer
+    // belongs to the user — e.g. an account deleted between our ownership check
+    // and this upsert. Surface it as a clean 400 rather than a generic 500.
+    if (error.code === "23514") {
+      return NextResponse.json(
+        {
+          error: "Bad Request",
+          code: "ACCOUNT_NOT_FOUND",
+          message:
+            "One or more selected accounts are invalid or not linked to your account.",
+        },
+        { status: 400, headers: NO_STORE },
+      );
+    }
+    return internalError("save wakeup config", error);
+  }
 
   return NextResponse.json(
     { config: dbConfigToWakeup(data) },
