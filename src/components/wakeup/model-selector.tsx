@@ -1,7 +1,6 @@
 "use client";
 
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
 import { WAKEUP_MODEL_OPTIONS } from "@/lib/types/wakeup";
 import { cn } from "@/lib/utils";
 
@@ -41,9 +40,9 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
               aria-label={`Select ${model.label}`}
             />
             <div className="flex flex-col">
-              <Label className="cursor-pointer font-normal">
+              <span className="font-normal text-sm leading-none text-foreground">
                 {model.label}
-              </Label>
+              </span>
               <span
                 className={cn(
                   "text-xs font-medium",

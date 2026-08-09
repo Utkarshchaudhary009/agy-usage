@@ -78,7 +78,8 @@ export function SchedulePicker({ value, onChange }: SchedulePickerProps) {
           <div className="flex flex-wrap gap-2">
             {value.dailyTimes.map((time, i) => (
               <div
-                key={time}
+                // biome-ignore lint/suspicious/noArrayIndexKey: times are user-editable inline; index is stable for the edit handlers above
+                key={i}
                 className="flex items-center gap-1 rounded-lg border bg-background px-2 py-1"
               >
                 <input
