@@ -1,5 +1,5 @@
 import type { ScheduleMode, WakeupConfig } from "@/lib/types/wakeup";
-import { parseCron } from "./cron";
+import { matchesDay, parseCron } from "./cron";
 
 const MAX_LOOKAHEAD_DAYS = 366;
 
@@ -90,10 +90,7 @@ function getNextCronTime(expr: string, from: Date): Date | null {
       cursor.setHours(0, 0, 0, 0);
       continue;
     }
-    if (
-      !cron.daysOfMonth.has(cursor.getDate()) ||
-      !cron.daysOfWeek.has(cursor.getDay())
-    ) {
+    if (!matchesDay(cron, cursor)) {
       cursor.setDate(cursor.getDate() + 1);
       cursor.setHours(0, 0, 0, 0);
       continue;

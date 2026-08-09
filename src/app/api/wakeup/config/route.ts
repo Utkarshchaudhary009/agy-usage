@@ -1,14 +1,14 @@
 import { auth } from "@clerk/nextjs/server";
 import { type NextRequest, NextResponse } from "next/server";
-import { internalError, unauthorized } from "@/lib/api/accounts";
+import { internalError, unauthorized } from "@/lib/api/responses";
 import { createServerClient } from "@/lib/supabase/server";
 import {
   DEFAULT_WAKEUP_CONFIG,
   dbConfigToWakeup,
-  validateWakeupConfig,
   type WakeupConfig,
   wakeupConfigToDb,
 } from "@/lib/types/wakeup";
+import { validateWakeupConfig } from "@/lib/wakeup/config-schema";
 
 // Per-user configuration: never let a shared cache or CDN retain it.
 const NO_STORE = { "Cache-Control": "no-store" } as const;

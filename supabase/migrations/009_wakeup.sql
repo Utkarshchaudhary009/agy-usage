@@ -55,3 +55,16 @@ CREATE POLICY "Users manage own wakeup logs"
   FOR ALL TO authenticated
   USING (requesting_user_id() = clerk_user_id)
   WITH CHECK (requesting_user_id() = clerk_user_id);
+
+CREATE OR REPLACE FUNCTION public.set_wakeup_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER set_wakeup_updated_at
+  BEFORE UPDATE ON public.wakeup_configs
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_wakeup_updated_at();
