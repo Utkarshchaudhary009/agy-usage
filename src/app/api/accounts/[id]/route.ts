@@ -1,12 +1,11 @@
 import { auth } from "@clerk/nextjs/server";
 import { type NextRequest, NextResponse } from "next/server";
+import { accountNotFound, getOwnedAccountId } from "@/lib/api/accounts";
 import {
-  accountNotFound,
-  getOwnedAccountId,
   internalError,
   isRowNotFound,
   unauthorized,
-} from "@/lib/api/accounts";
+} from "@/lib/api/responses";
 import { createServerClient } from "@/lib/supabase/server";
 
 type RouteContext = { params: Promise<{ id: string }> };

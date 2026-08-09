@@ -2,14 +2,13 @@ import { auth } from "@clerk/nextjs/server";
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 import { type NextRequest, NextResponse } from "next/server";
+import { accountNotFound, getOwnedAccountId } from "@/lib/api/accounts";
 import {
-  accountNotFound,
   errorJson,
-  getOwnedAccountId,
   internalError,
   isRowNotFound,
   unauthorized,
-} from "@/lib/api/accounts";
+} from "@/lib/api/responses";
 import {
   forceRefreshToken,
   TokenRefreshError,
