@@ -90,24 +90,3 @@ export function getOwnedAccountId(
     .eq("clerk_user_id", userId)
     .single();
 }
-
-// Returns the subset of `accountIds` that the user does not own. The query is
-// bounded by the requested ids instead of listing every account the user has.
-export async function findUnlinkedAccountIds(
-  supabase: SupabaseClient<Database>,
-  userId: string,
-  accountIds: string[],
-): Promise<string[]> {
-  if (accountIds.length === 0) return [];
-
-  const { data, error } = await supabase
-    .from("google_accounts")
-    .select("id")
-    .eq("clerk_user_id", userId)
-    .in("id", accountIds);
-
-  if (error) throw error;
-
-  const owned = new Set((data ?? []).map((row) => row.id));
-  return accountIds.filter((id) => !owned.has(id));
-}

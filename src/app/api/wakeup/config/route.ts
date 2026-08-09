@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { type NextRequest, NextResponse } from "next/server";
-import { internalError, unauthorized } from "@/lib/api/responses";
+import { findUnlinkedAccountIds } from "@/lib/api/accounts";
+import { badRequest, internalError, unauthorized } from "@/lib/api/responses";
 import { createServerClient } from "@/lib/supabase/server";
 import {
   DEFAULT_WAKEUP_CONFIG,
@@ -24,7 +25,7 @@ export async function GET() {
     .eq("clerk_user_id", userId)
     .maybeSingle();
 
-  if (error) return internalError("load wakeup config", error);
+  if (error) return internalError("load wakeup config", error, NO_STORE);
 
   const config: WakeupConfig = data
     ? dbConfigToWakeup(data)
@@ -41,26 +42,16 @@ export async function PUT(req: NextRequest) {
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json(
-      {
-        error: "Bad Request",
-        code: "INVALID_JSON",
-        message: "Request body is not valid JSON.",
-      },
-      { status: 400, headers: NO_STORE },
+    return badRequest(
+      "INVALID_JSON",
+      "Request body is not valid JSON.",
+      NO_STORE,
     );
   }
 
   const validation = validateWakeupConfig(body);
   if (!validation.ok) {
-    return NextResponse.json(
-      {
-        error: "Validation Error",
-        code: "VALIDATION_ERROR",
-        message: validation.error,
-      },
-      { status: 400, headers: NO_STORE },
-    );
+    return badRequest("VALIDATION_ERROR", validation.error, NO_STORE);
   }
 
   const supabase = await createServerClient();
@@ -71,24 +62,22 @@ export async function PUT(req: NextRequest) {
   // 010) because the browser can reach PostgREST directly and skip this route;
   // checking here just fails fast with a clear message.
   if (config.selectedAccountIds.length > 0) {
-    const { data: owned, error: ownedError } = await supabase
-      .from("google_accounts")
-      .select("id")
-      .eq("clerk_user_id", userId);
+    let invalid: string[];
+    try {
+      invalid = await findUnlinkedAccountIds(
+        supabase,
+        userId,
+        config.selectedAccountIds,
+      );
+    } catch (err) {
+      return internalError("verify accounts", err, NO_STORE);
+    }
 
-    if (ownedError) return internalError("verify accounts", ownedError);
-
-    const ownedIds = new Set((owned ?? []).map((a) => a.id));
-    const invalid = config.selectedAccountIds.filter((id) => !ownedIds.has(id));
     if (invalid.length > 0) {
-      return NextResponse.json(
-        {
-          error: "Bad Request",
-          code: "ACCOUNT_NOT_FOUND",
-          message:
-            "One or more selected accounts are invalid or not linked to your account.",
-        },
-        { status: 400, headers: NO_STORE },
+      return badRequest(
+        "ACCOUNT_NOT_FOUND",
+        "One or more selected accounts are invalid or not linked to your account.",
+        NO_STORE,
       );
     }
   }
@@ -109,17 +98,13 @@ export async function PUT(req: NextRequest) {
     // belongs to the user — e.g. an account deleted between our ownership check
     // and this upsert. Surface it as a clean 400 rather than a generic 500.
     if (error.code === "23514") {
-      return NextResponse.json(
-        {
-          error: "Bad Request",
-          code: "ACCOUNT_NOT_FOUND",
-          message:
-            "One or more selected accounts are invalid or not linked to your account.",
-        },
-        { status: 400, headers: NO_STORE },
+      return badRequest(
+        "ACCOUNT_NOT_FOUND",
+        "One or more selected accounts are invalid or not linked to your account.",
+        NO_STORE,
       );
     }
-    return internalError("save wakeup config", error);
+    return internalError("save wakeup config", error, NO_STORE);
   }
 
   return NextResponse.json(
