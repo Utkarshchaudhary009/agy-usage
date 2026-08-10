@@ -1,7 +1,7 @@
 "use client";
 
 import { Loader2, Save } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -65,22 +65,27 @@ export function WakeupConfigForm({
   const [saving, setSaving] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
+  // Time-relative previews depend on the current clock and locale, which differ
+  // between the server (SSR) and the client (hydration) and would cause a
+  // hydration mismatch. Only compute them after the component has mounted.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   const cronError = useMemo(() => {
     if (scheduleMode !== "custom" || !cronExpression) return undefined;
     const result = validateCron(cronExpression);
     return result.valid ? undefined : result.error;
   }, [scheduleMode, cronExpression]);
 
-  const nextTrigger = useMemo(
-    () =>
-      nextTriggerPreview({
-        scheduleMode,
-        intervalHours,
-        dailyTimes,
-        cronExpression,
-      }),
-    [scheduleMode, intervalHours, dailyTimes, cronExpression],
-  );
+  const nextTrigger = useMemo(() => {
+    if (!mounted) return null;
+    return nextTriggerPreview({
+      scheduleMode,
+      intervalHours,
+      dailyTimes,
+      cronExpression,
+    });
+  }, [mounted, scheduleMode, intervalHours, dailyTimes, cronExpression]);
 
   const allAccountsSelected =
     selectedAccountIds.length === 0 ||
