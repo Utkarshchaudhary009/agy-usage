@@ -9,6 +9,13 @@ import {
   validateWakeupInput,
 } from "@/lib/wakeup/config";
 
+// Never statically evaluate this route at build time. It reads Supabase env
+// vars (NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) inside the handler
+// via createServerClient()/createServiceClient(), which would otherwise throw
+// "Missing ... environment variable" during `next build` on Vercel and abort
+// the build. The config is therefore validated lazily inside each handler.
+export const dynamic = "force-dynamic";
+
 function unauthorized() {
   return NextResponse.json(
     {
