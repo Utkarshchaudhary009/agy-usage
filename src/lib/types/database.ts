@@ -234,6 +234,104 @@ export interface Database {
           },
         ];
       };
+      wakeup_configs: {
+        Row: {
+          id: string;
+          clerk_user_id: string;
+          enabled: boolean;
+          selected_models: string[];
+          selected_account_ids: string[];
+          schedule_mode: "interval" | "daily" | "custom";
+          interval_hours: number;
+          daily_times: string[];
+          cron_expression: string | null;
+          custom_prompt: string;
+          max_output_tokens: number;
+          cooldown_minutes: number;
+          wake_on_reset: boolean;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          clerk_user_id: string;
+          enabled?: boolean;
+          selected_models?: string[];
+          selected_account_ids?: string[];
+          schedule_mode?: "interval" | "daily" | "custom";
+          interval_hours?: number;
+          daily_times?: string[];
+          cron_expression?: string | null;
+          custom_prompt?: string;
+          max_output_tokens?: number;
+          cooldown_minutes?: number;
+          wake_on_reset?: boolean;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          clerk_user_id?: string;
+          enabled?: boolean;
+          selected_models?: string[];
+          selected_account_ids?: string[];
+          schedule_mode?: "interval" | "daily" | "custom";
+          interval_hours?: number;
+          daily_times?: string[];
+          cron_expression?: string | null;
+          custom_prompt?: string;
+          max_output_tokens?: number;
+          cooldown_minutes?: number;
+          wake_on_reset?: boolean;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      wakeup_logs: {
+        Row: {
+          id: string;
+          clerk_user_id: string;
+          account_id: string | null;
+          model_id: string;
+          trigger_source: "manual" | "scheduled" | "quota_reset";
+          success: boolean;
+          duration_ms: number | null;
+          error: string | null;
+          response_preview: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          clerk_user_id: string;
+          account_id?: string | null;
+          model_id: string;
+          trigger_source: "manual" | "scheduled" | "quota_reset";
+          success: boolean;
+          duration_ms?: number | null;
+          error?: string | null;
+          response_preview?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          clerk_user_id?: string;
+          account_id?: string | null;
+          model_id?: string;
+          trigger_source?: "manual" | "scheduled" | "quota_reset";
+          success?: boolean;
+          duration_ms?: number | null;
+          error?: string | null;
+          response_preview?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "wakeup_logs_account_id_fkey";
+            columns: ["account_id"];
+            isOneToOne: false;
+            referencedRelation: "google_accounts";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -300,6 +398,22 @@ export interface Database {
           p_lock_token: string;
         };
         Returns: boolean;
+      };
+      validate_and_upsert_wakeup_config: {
+        Args: {
+          p_enabled: boolean;
+          p_selected_models: string[];
+          p_selected_account_ids: string[];
+          p_schedule_mode: string;
+          p_interval_hours: number;
+          p_daily_times: string[];
+          p_cron_expression: string | null;
+          p_custom_prompt: string;
+          p_max_output_tokens: number;
+          p_cooldown_minutes: number;
+          p_wake_on_reset: boolean;
+        };
+        Returns: Database["public"]["Tables"]["wakeup_configs"]["Row"][];
       };
     };
     Enums: {

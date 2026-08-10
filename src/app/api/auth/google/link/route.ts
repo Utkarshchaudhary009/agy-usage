@@ -8,6 +8,10 @@ import {
 } from "@/lib/google/oauth-config";
 import { encryptToken as encryptState } from "@/lib/google/state-crypto";
 
+// Same rationale as the callback route: the Google OAuth env vars are read
+// inside the handler, so keep this route out of static build-time evaluation.
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const { userId } = await auth();
 
