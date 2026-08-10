@@ -234,36 +234,57 @@ export async function getWakeupConfig(
  * Upserts the user's wakeup config after verifying that every selected account
  * belongs to the authenticated user (RLS also enforces this, but we fail fast
  * with a clear validation error rather than a generic RLS rejection).
+ *
+ * Uses atomic validation + upsert to prevent race conditions where accounts
+ * could be deleted or transfer ownership between validation and upsert steps.
  */
 export async function saveWakeupConfig(
   supabase: SupabaseClient<Database>,
   clerkUserId: string,
   input: WakeupConfigInput,
 ): Promise<WakeupConfig> {
-  if (input.selectedAccountIds.length > 0) {
-    const { data: owned, error: ownedErr } = await supabase
-      .from("google_accounts")
-      .select("id")
-      .eq("clerk_user_id", clerkUserId)
-      .in("id", input.selectedAccountIds);
+  const selectedIds = input.selectedAccountIds;
 
-    if (ownedErr) {
-      throw new Error(`Failed to verify accounts: ${ownedErr.message}`);
-    }
-    const ownedIds = new Set((owned ?? []).map((a) => a.id));
-    const unauthorized = input.selectedAccountIds.filter(
-      (id) => !ownedIds.has(id),
+  if (selectedIds.length > 0) {
+    // Atomic validation + upsert using a single transaction
+    const { data: validated, error: validatedErr } = await supabase.rpc(
+      "validate_and_upsert_wakeup_config",
+      {
+        p_clerk_user_id: clerkUserId,
+        p_enabled: input.enabled,
+        p_selected_models: input.selectedModels,
+        p_selected_account_ids: selectedIds,
+        p_schedule_mode: input.scheduleMode,
+        p_interval_hours: input.intervalHours,
+        p_daily_times: input.dailyTimes,
+        p_cron_expression: input.cronExpression,
+        p_custom_prompt: input.customPrompt,
+        p_max_output_tokens: input.maxOutputTokens,
+        p_cooldown_minutes: input.cooldownMinutes,
+        p_wake_on_reset: input.wakeOnReset,
+      },
     );
-    if (unauthorized.length > 0) {
-      throw new AccountOwnershipError();
+
+    if (validatedErr) {
+      if (validatedErr.message.includes("AccountOwnershipError")) {
+        throw new AccountOwnershipError();
+      }
+      throw new Error(`Failed to save wakeup config: ${validatedErr.message}`);
     }
+
+    if (!validated || !Array.isArray(validated) || validated.length === 0) {
+      throw new Error("Failed to save wakeup config: No data returned");
+    }
+
+    return rowToConfig(validated[0]);
   }
 
+  // If no accounts selected, proceed with simple upsert
   const row = {
     clerk_user_id: clerkUserId,
     enabled: input.enabled,
     selected_models: input.selectedModels,
-    selected_account_ids: input.selectedAccountIds,
+    selected_account_ids: selectedIds,
     schedule_mode: input.scheduleMode,
     interval_hours: input.intervalHours,
     daily_times: input.dailyTimes,

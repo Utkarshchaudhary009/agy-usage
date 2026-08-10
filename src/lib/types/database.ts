@@ -399,6 +399,23 @@ export interface Database {
         };
         Returns: boolean;
       };
+      validate_and_upsert_wakeup_config: {
+        Args: {
+          p_clerk_user_id: string;
+          p_enabled: boolean;
+          p_selected_models: string[];
+          p_selected_account_ids: string[];
+          p_schedule_mode: string;
+          p_interval_hours: number;
+          p_daily_times: string[];
+          p_cron_expression: string | null;
+          p_custom_prompt: string;
+          p_max_output_tokens: number;
+          p_cooldown_minutes: number;
+          p_wake_on_reset: boolean;
+        };
+        Returns: Database["public"]["Tables"]["wakeup_configs"]["Row"][];
+      };
     };
     Enums: {
       [_ in never]: never;
