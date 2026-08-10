@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
 import {
+  AccountOwnershipError,
   getWakeupConfig,
   isPostgrestError,
   saveWakeupConfig,
@@ -76,10 +77,7 @@ export async function PUT(req: NextRequest) {
     const config = await saveWakeupConfig(supabase, userId, validation.data);
     return NextResponse.json({ config });
   } catch (err) {
-    if (
-      err instanceof Error &&
-      err.message.includes("do not belong to this user")
-    ) {
+    if (err instanceof AccountOwnershipError) {
       return NextResponse.json(
         {
           error: "Forbidden",

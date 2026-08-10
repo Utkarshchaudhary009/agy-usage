@@ -5,6 +5,7 @@ import {
   DEFAULT_WAKEUP_CONFIG,
   isWakeupModelId,
   type WakeupConfig,
+  type WakeupConfigInput,
 } from "@/lib/types/wakeup";
 import { type CronValidationResult, validateCron } from "@/lib/wakeup/schedule";
 
@@ -19,18 +20,15 @@ const MAX_SELECTED_MODELS = 25;
 const MAX_ACCOUNT_IDS = 100;
 const MAX_DAILY_TIMES = 50;
 
-export interface WakeupConfigInput {
-  enabled: boolean;
-  selectedModels: string[];
-  selectedAccountIds: string[];
-  scheduleMode: "interval" | "daily" | "custom";
-  intervalHours: number;
-  dailyTimes: string[];
-  cronExpression: string | null;
-  customPrompt: string;
-  maxOutputTokens: number;
-  cooldownMinutes: number;
-  wakeOnReset: boolean;
+/**
+ * Thrown when a user attempts to save a config referencing account IDs that
+ * are not owned by them. Surfaced to the API layer as a 403.
+ */
+export class AccountOwnershipError extends Error {
+  constructor() {
+    super("One or more accounts do not belong to this user.");
+    this.name = "AccountOwnershipError";
+  }
 }
 
 export interface ValidationResult {
@@ -254,7 +252,7 @@ export async function saveWakeupConfig(
       (id) => !ownedIds.has(id),
     );
     if (unauthorized.length > 0) {
-      throw new Error("One or more accounts do not belong to this user.");
+      throw new AccountOwnershipError();
     }
   }
 

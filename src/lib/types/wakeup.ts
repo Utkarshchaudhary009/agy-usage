@@ -19,6 +19,11 @@ export interface WakeupConfig {
   updatedAt: string;
 }
 
+export type WakeupConfigInput = Omit<
+  WakeupConfig,
+  "id" | "clerkUserId" | "updatedAt"
+>;
+
 export interface WakeupLog {
   id: string;
   clerkUserId: string;
@@ -60,10 +65,7 @@ export function isWakeupModelId(value: string): value is WakeupModelId {
   return (WAKEUP_MODEL_IDS as readonly string[]).includes(value);
 }
 
-export const DEFAULT_WAKEUP_CONFIG: Omit<
-  WakeupConfig,
-  "id" | "clerkUserId" | "updatedAt"
-> = {
+export const DEFAULT_WAKEUP_CONFIG: WakeupConfigInput = {
   enabled: false,
   selectedModels: ["claude-sonnet-4-5", "gemini-3-flash", "gemini-3-pro-low"],
   selectedAccountIds: [],

@@ -14,8 +14,6 @@ import {
 import { Slider } from "@/components/ui/slider";
 import type { ScheduleMode } from "@/lib/types/wakeup";
 
-const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
-
 export function SchedulePicker({
   mode,
   intervalHours,
@@ -126,12 +124,6 @@ export function SchedulePicker({
               Add time
             </Button>
           </div>
-          {dailyTimes.length > 0 &&
-          !dailyTimes.every((t) => TIME_RE.test(t)) ? (
-            <p className="text-xs text-destructive">
-              All times must use HH:MM (24h) format.
-            </p>
-          ) : null}
         </div>
       ) : null}
 

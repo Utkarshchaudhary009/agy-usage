@@ -13,6 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { ModelSelector } from "@/components/wakeup/model-selector";
 import { SchedulePicker } from "@/components/wakeup/schedule-picker";
 import type { WakeupConfig } from "@/lib/types/wakeup";
+import { cn } from "@/lib/utils";
 import {
   describeSchedule,
   nextTriggerPreview,
@@ -163,7 +164,10 @@ export function WakeupConfigForm({
           </div>
         </CardHeader>
         <CardContent>
-          <div className={cnContent(!enabled)} aria-hidden={!enabled}>
+          <div
+            className={cn(!enabled && "pointer-events-none opacity-50")}
+            aria-hidden={!enabled}
+          >
             <div className="grid gap-6 lg:grid-cols-2">
               <div className="space-y-4">
                 <ModelSelector
@@ -329,8 +333,4 @@ export function WakeupConfigForm({
       </Card>
     </div>
   );
-}
-
-function cnContent(disabled: boolean): string {
-  return disabled ? "pointer-events-none opacity-50" : "";
 }
