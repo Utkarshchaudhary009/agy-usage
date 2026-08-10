@@ -1,4 +1,5 @@
 import type { ScheduleMode, WakeupConfig } from "@/lib/types/wakeup";
+import { WAKEUP_LIMITS } from "@/lib/types/wakeup";
 
 const CRON_FIELD_BOUNDS: ReadonlyArray<[number, number]> = [
   [0, 59], // minute
@@ -8,9 +9,117 @@ const CRON_FIELD_BOUNDS: ReadonlyArray<[number, number]> = [
   [0, 6], // day of week (0 = Sunday)
 ];
 
+const MINUTE_MS = 60 * 1000;
+const PREVIEW_HORIZON_DAYS = 366;
+
 export interface CronValidationResult {
   valid: boolean;
   error?: string;
+}
+
+/**
+ * A cron expression expanded into the concrete set of values each field
+ * accepts: [minute, hour, day-of-month, month, day-of-week].
+ *
+ * Expanding once up front keeps `nextCronTrigger` free of per-candidate regex
+ * work, which matters because the preview is computed during render.
+ */
+type CompiledCron = readonly [
+  Set<number>,
+  Set<number>,
+  Set<number>,
+  Set<number>,
+  Set<number>,
+];
+
+interface CronCompileResult {
+  cron?: CompiledCron;
+  error?: string;
+}
+
+/**
+ * Expands a single cron token — wildcard, literal (`5`), range (`1-4`) or any
+ * of those with a step suffix (`2-10/2`) — into `out`.
+ * Returns an error message when the token is malformed or out of bounds.
+ */
+function collectTokenValues(
+  token: string,
+  min: number,
+  max: number,
+  out: Set<number>,
+): string | null {
+  const stepMatch = token.match(/^(\*|\d+(?:-\d+)?)\/(\d+)$/);
+  if (stepMatch) {
+    const step = Number(stepMatch[2]);
+    if (step < 1) {
+      return `Invalid step in "${token}".`;
+    }
+
+    let lo = min;
+    let hi = max;
+    if (stepMatch[1] !== "*") {
+      const bounds = stepMatch[1].split("-");
+      lo = Number(bounds[0]);
+      // `5/10` is shorthand for `5-<max>/10`, matching standard cron.
+      hi = bounds.length > 1 ? Number(bounds[1]) : max;
+    }
+    if (lo < min || hi > max || lo > hi) {
+      return `Range out of bounds in "${token}".`;
+    }
+
+    for (let value = lo; value <= hi; value += step) {
+      out.add(value);
+    }
+    return null;
+  }
+
+  const rangeMatch = token.match(/^(\*|\d+)(?:-(\d+))?$/);
+  if (rangeMatch) {
+    const isWildcard = rangeMatch[1] === "*";
+    const lo = isWildcard ? min : Number(rangeMatch[1]);
+    const hi =
+      rangeMatch[2] !== undefined
+        ? Number(rangeMatch[2])
+        : isWildcard
+          ? max
+          : lo;
+    if (lo < min || hi > max || lo > hi) {
+      return `Value out of bounds in "${token}".`;
+    }
+
+    for (let value = lo; value <= hi; value++) {
+      out.add(value);
+    }
+    return null;
+  }
+
+  return `Unsupported cron token "${token}".`;
+}
+
+function compileCron(expression: string): CronCompileResult {
+  const parts = expression.trim().split(/\s+/);
+
+  if (parts.length !== 5) {
+    return { error: "Cron must have 5 fields (m h dom mon dow)." };
+  }
+
+  const fields: Set<number>[] = [];
+  for (let field = 0; field < parts.length; field++) {
+    const [min, max] = CRON_FIELD_BOUNDS[field];
+    const values = new Set<number>();
+
+    for (const token of parts[field].split(",")) {
+      const error = collectTokenValues(token, min, max, values);
+      if (error) return { error };
+    }
+
+    if (values.size === 0) {
+      return { error: `Cron field "${parts[field]}" matches nothing.` };
+    }
+    fields.push(values);
+  }
+
+  return { cron: fields as unknown as CompiledCron };
 }
 
 /**
@@ -20,103 +129,8 @@ export interface CronValidationResult {
  * and literal numbers.
  */
 export function validateCron(expression: string): CronValidationResult {
-  const trimmed = expression.trim();
-  const parts = trimmed.split(/\s+/);
-
-  if (parts.length !== 5) {
-    return {
-      valid: false,
-      error: "Cron must have 5 fields (m h dom mon dow).",
-    };
-  }
-
-  for (let field = 0; field < parts.length; field++) {
-    const value = parts[field];
-    const [min, max] = CRON_FIELD_BOUNDS[field];
-
-    for (const token of value.split(",")) {
-      const stepMatch = token.match(/^(\*|\d+(?:-\d+)?)\/(\d+)$/);
-      if (stepMatch) {
-        const step = Number(stepMatch[2]);
-        if (step < 1) {
-          return { valid: false, error: `Invalid step in "${token}".` };
-        }
-        if (stepMatch[1] !== "*") {
-          const [lo, hi] = stepMatch[1].split("-").map(Number);
-          if (lo < min || hi > max || lo > hi) {
-            return {
-              valid: false,
-              error: `Range out of bounds in "${token}".`,
-            };
-          }
-        }
-        continue;
-      }
-
-      const rangeMatch = token.match(/^(\*|\d+)(?:-(\d+))?$/);
-      if (rangeMatch) {
-        const lo = rangeMatch[1] === "*" ? min : Number(rangeMatch[1]);
-        const hi =
-          rangeMatch[2] === undefined
-            ? rangeMatch[1] === "*"
-              ? max
-              : Number(rangeMatch[1])
-            : Number(rangeMatch[2]);
-        if (lo < min || hi > max || lo > hi) {
-          return { valid: false, error: `Value out of bounds in "${token}".` };
-        }
-        continue;
-      }
-
-      return { valid: false, error: `Unsupported cron token "${token}".` };
-    }
-  }
-
-  return { valid: true };
-}
-
-function cronMatches(cronParts: string[], date: Date): boolean {
-  const fields = [
-    date.getMinutes(),
-    date.getHours(),
-    date.getDate(),
-    date.getMonth() + 1,
-    date.getDay(),
-  ];
-
-  for (let field = 0; field < 5; field++) {
-    const [min, max] = CRON_FIELD_BOUNDS[field];
-    const matched = cronParts[field]
-      .split(",")
-      .some((token) => fieldMatches(token, fields[field], min, max));
-    if (!matched) return false;
-  }
-  return true;
-}
-
-function fieldMatches(
-  token: string,
-  value: number,
-  min: number,
-  max: number,
-): boolean {
-  if (token === "*") return true;
-  const stepMatch = token.match(/^(\*|\d+(?:-\d+)?)\/(\d+)$/);
-  if (stepMatch) {
-    const step = Number(stepMatch[2]);
-    if (stepMatch[1] === "*") {
-      return value >= min && value <= max && (value - min) % step === 0;
-    }
-    const [lo, hi] = stepMatch[1].split("-").map(Number);
-    return value >= lo && value <= hi && (value - lo) % step === 0;
-  }
-  const rangeMatch = token.match(/^(\d+)(?:-(\d+))?$/);
-  if (rangeMatch) {
-    const lo = Number(rangeMatch[1]);
-    const hi = rangeMatch[2] === undefined ? lo : Number(rangeMatch[2]);
-    return value >= lo && value <= hi;
-  }
-  return false;
+  const { error } = compileCron(expression);
+  return error ? { valid: false, error } : { valid: true };
 }
 
 /**
@@ -132,17 +146,20 @@ export function nextTriggerPreview(
 ): Date | null {
   switch (config.scheduleMode) {
     case "interval": {
-      const hours = Math.max(1, config.intervalHours);
-      return new Date(from.getTime() + hours * 60 * 60 * 1000);
+      const hours = Math.max(
+        WAKEUP_LIMITS.intervalHours.min,
+        config.intervalHours,
+      );
+      return new Date(from.getTime() + hours * 60 * MINUTE_MS);
     }
     case "daily": {
       return nextDailyTrigger(config.dailyTimes, from);
     }
     case "custom": {
       if (!config.cronExpression) return null;
-      const parts = config.cronExpression.trim().split(/\s+/);
-      if (parts.length !== 5) return null;
-      return nextCronTrigger(parts, from);
+      const { cron } = compileCron(config.cronExpression);
+      if (!cron) return null;
+      return nextCronTrigger(cron, from);
     }
     default:
       return null;
@@ -150,41 +167,77 @@ export function nextTriggerPreview(
 }
 
 function nextDailyTrigger(times: string[], from: Date): Date | null {
-  const parsed = times
-    .map((t) => {
-      const m = t.match(/^(\d{1,2}):(\d{2})$/);
-      if (!m) return null;
-      const hour = Number(m[1]);
-      const minute = Number(m[2]);
-      if (hour > 23 || minute > 59) return null;
-      return { hour, minute };
-    })
-    .filter((t): t is { hour: number; minute: number } => t !== null)
-    .sort((a, b) => a.hour * 60 + a.minute - (b.hour * 60 + b.minute));
-
-  if (parsed.length === 0) return null;
-
-  for (let offset = 0; offset <= 24 * 60; offset++) {
-    const candidate = new Date(from.getTime() + offset * 60 * 1000);
-    const matches = parsed.find(
-      (t) =>
-        t.hour === candidate.getHours() && t.minute === candidate.getMinutes(),
-    );
-    if (matches && offset > 0) return candidate;
+  const minutesOfDay = new Set<number>();
+  for (const time of times) {
+    const match = time.match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) continue;
+    const hour = Number(match[1]);
+    const minute = Number(match[2]);
+    if (hour > 23 || minute > 59) continue;
+    minutesOfDay.add(hour * 60 + minute);
   }
-  return null;
+
+  if (minutesOfDay.size === 0) return null;
+
+  const sorted = [...minutesOfDay].sort((a, b) => a - b);
+  const currentMinute = from.getHours() * 60 + from.getMinutes();
+  // Strictly in the future, so a time matching the current minute rolls over.
+  const upcoming = sorted.find((minute) => minute > currentMinute);
+
+  const candidate = new Date(from.getTime());
+  if (upcoming === undefined) {
+    candidate.setDate(candidate.getDate() + 1);
+  }
+  const target = upcoming ?? sorted[0];
+  candidate.setHours(Math.floor(target / 60), target % 60, 0, 0);
+  return candidate;
 }
 
-function nextCronTrigger(parts: string[], from: Date): Date | null {
-  // Walk forward minute-by-minute up to a year out (sufficient for previews).
-  const limit = from.getTime() + 366 * 24 * 60 * 60 * 1000;
-  const cursor = new Date(from.getTime() + 60 * 1000);
+/**
+ * Finds the first minute at or after `from` that satisfies the expression.
+ *
+ * Walks calendar-component-wise rather than minute-by-minute: a non-matching
+ * month/day/hour skips the whole month/day/hour instead of the 40k+ individual
+ * minutes it contains. This keeps even never-matching expressions
+ * (e.g. `0 0 30 2 *`) to a few hundred iterations.
+ *
+ * Note: day-of-month and day-of-week are ANDed. Vixie cron ORs them when both
+ * are restricted; this implementation intentionally keeps the stricter rule so
+ * the preview never claims a trigger the scheduler would not run.
+ */
+function nextCronTrigger(cron: CompiledCron, from: Date): Date | null {
+  const [minutes, hours, daysOfMonth, months, daysOfWeek] = cron;
+
+  const limit = from.getTime() + PREVIEW_HORIZON_DAYS * 24 * 60 * MINUTE_MS;
+  const cursor = new Date(from.getTime());
   cursor.setSeconds(0, 0);
+  cursor.setMinutes(cursor.getMinutes() + 1);
 
   while (cursor.getTime() <= limit) {
-    if (cronMatches(parts, cursor)) return cursor;
-    cursor.setMinutes(cursor.getMinutes() + 1);
+    if (!months.has(cursor.getMonth() + 1)) {
+      cursor.setMonth(cursor.getMonth() + 1, 1);
+      cursor.setHours(0, 0, 0, 0);
+      continue;
+    }
+    if (
+      !daysOfMonth.has(cursor.getDate()) ||
+      !daysOfWeek.has(cursor.getDay())
+    ) {
+      cursor.setDate(cursor.getDate() + 1);
+      cursor.setHours(0, 0, 0, 0);
+      continue;
+    }
+    if (!hours.has(cursor.getHours())) {
+      cursor.setHours(cursor.getHours() + 1, 0, 0, 0);
+      continue;
+    }
+    if (!minutes.has(cursor.getMinutes())) {
+      cursor.setMinutes(cursor.getMinutes() + 1, 0, 0);
+      continue;
+    }
+    return cursor;
   }
+
   return null;
 }
 

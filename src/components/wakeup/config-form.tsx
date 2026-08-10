@@ -224,6 +224,7 @@ export function WakeupConfigForm({
                   onDailyTimesChange={setDailyTimes}
                   onCronChange={setCronExpression}
                   cronError={cronError ?? fieldErrors.cronExpression}
+                  disabled={!enabled}
                 />
 
                 <Separator />

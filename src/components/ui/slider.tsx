@@ -1,5 +1,7 @@
+"use client";
+
 import * as SliderPrimitive from "radix-ui/slider";
-import * as React from "react";
+import type * as React from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -11,15 +13,13 @@ function Slider({
   max = 100,
   ...props
 }: React.ComponentProps<typeof SliderPrimitive.Root>) {
-  const _values = React.useMemo(
-    () =>
-      Array.isArray(value)
-        ? value
-        : Array.isArray(defaultValue)
-          ? defaultValue
-          : [min, max],
-    [value, defaultValue, min, max],
-  );
+  // Radix renders one thumb per value. Only the count matters here, so derive
+  // it directly instead of materialising an array behind a memo.
+  const thumbCount = Array.isArray(value)
+    ? value.length
+    : Array.isArray(defaultValue)
+      ? defaultValue.length
+      : 2;
 
   return (
     <SliderPrimitive.Root
@@ -43,7 +43,7 @@ function Slider({
           className="bg-primary absolute data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full"
         />
       </SliderPrimitive.Track>
-      {Array.from({ length: _values.length }, (_, index) => (
+      {Array.from({ length: thumbCount }, (_, index) => (
         <SliderPrimitive.Thumb
           // biome-ignore lint/suspicious/noArrayIndexKey: static slider thumbs
           key={index}

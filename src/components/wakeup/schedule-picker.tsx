@@ -1,6 +1,7 @@
 "use client";
 
 import { Plus, X } from "lucide-react";
+import { useId } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +16,24 @@ import { Slider } from "@/components/ui/slider";
 import type { ScheduleMode } from "@/lib/types/wakeup";
 import { WAKEUP_LIMITS } from "@/lib/types/wakeup";
 
+interface SchedulePickerProps {
+  mode: ScheduleMode;
+  intervalHours: number;
+  dailyTimes: string[];
+  cronExpression: string | null;
+  onModeChange: (mode: ScheduleMode) => void;
+  onIntervalChange: (hours: number) => void;
+  onDailyTimesChange: (times: string[]) => void;
+  onCronChange: (expr: string | null) => void;
+  cronError?: string;
+  /**
+   * Radix slider thumbs are `span[role=slider]`, not form controls, so a
+   * wrapping `<fieldset disabled>` cannot reach them. The flag is forwarded
+   * explicitly.
+   */
+  disabled?: boolean;
+}
+
 export function SchedulePicker({
   mode,
   intervalHours,
@@ -25,25 +44,26 @@ export function SchedulePicker({
   onDailyTimesChange,
   onCronChange,
   cronError,
-}: {
-  mode: ScheduleMode;
-  intervalHours: number;
-  dailyTimes: string[];
-  cronExpression: string | null;
-  onModeChange: (mode: ScheduleMode) => void;
-  onIntervalChange: (hours: number) => void;
-  onDailyTimesChange: (times: string[]) => void;
-  onCronChange: (expr: string | null) => void;
-  cronError?: string;
-}) {
+  disabled = false,
+}: SchedulePickerProps) {
+  const uid = useId();
+  const modeId = `${uid}-schedule-mode`;
+  const cronId = `${uid}-cron`;
+  const cronErrorId = `${uid}-cron-error`;
+  const cronHintId = `${uid}-cron-hint`;
+
+  const atTimeLimit = dailyTimes.length >= WAKEUP_LIMITS.maxDailyTimes;
+
   function addDailyTime() {
-    const next = [...dailyTimes, "12:00"].sort();
-    onDailyTimesChange(next);
+    if (atTimeLimit) return;
+    // Appended rather than inserted in sorted order: rows are keyed and edited
+    // by index, so re-ordering here would move the value under an existing
+    // input and steal focus mid-edit.
+    onDailyTimesChange([...dailyTimes, "12:00"]);
   }
 
   function updateDailyTime(index: number, value: string) {
-    const next = dailyTimes.map((t, i) => (i === index ? value : t));
-    onDailyTimesChange(next);
+    onDailyTimesChange(dailyTimes.map((t, i) => (i === index ? value : t)));
   }
 
   function removeDailyTime(index: number) {
@@ -53,12 +73,12 @@ export function SchedulePicker({
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="schedule-mode">Schedule mode</Label>
+        <Label htmlFor={modeId}>Schedule mode</Label>
         <Select
           value={mode}
           onValueChange={(v) => onModeChange(v as ScheduleMode)}
         >
-          <SelectTrigger id="schedule-mode" className="w-full sm:w-56">
+          <SelectTrigger id={modeId} className="w-full sm:w-56">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -82,7 +102,11 @@ export function SchedulePicker({
             min={WAKEUP_LIMITS.intervalHours.min}
             max={WAKEUP_LIMITS.intervalHours.max}
             step={1}
-            onValueChange={(v) => onIntervalChange(v[0] ?? 1)}
+            disabled={disabled}
+            aria-label="Hours between wake triggers"
+            onValueChange={(v) =>
+              onIntervalChange(v[0] ?? WAKEUP_LIMITS.intervalHours.min)
+            }
           />
           <p className="text-xs text-muted-foreground">
             Wake triggers run this often across all selected accounts.
@@ -95,13 +119,14 @@ export function SchedulePicker({
           <Label>Daily trigger times (24h)</Label>
           <div className="flex flex-col gap-2">
             {dailyTimes.map((time, index) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: rows are identified by position (edited and removed by index) and are fully controlled; a value-based key would remount the input on every keystroke and steal focus.
+              // biome-ignore lint/suspicious/noArrayIndexKey: rows are identified by position (edited and removed by index) and are never re-ordered; a value-based key would remount the input on every keystroke and steal focus.
               <div key={index} className="flex items-center gap-2">
                 <Input
                   type="time"
                   value={time}
                   onChange={(e) => updateDailyTime(index, e.target.value)}
                   className="w-40"
+                  aria-label={`Trigger time ${index + 1}`}
                 />
                 <Button
                   type="button"
@@ -119,32 +144,42 @@ export function SchedulePicker({
               variant="outline"
               size="sm"
               onClick={addDailyTime}
+              disabled={atTimeLimit}
               className="w-fit"
             >
               <Plus />
               Add time
             </Button>
+            {atTimeLimit ? (
+              <p className="text-xs text-muted-foreground">
+                Maximum of {WAKEUP_LIMITS.maxDailyTimes} trigger times reached.
+              </p>
+            ) : null}
           </div>
         </div>
       ) : null}
 
       {mode === "custom" ? (
         <div className="space-y-2">
-          <Label htmlFor="cron">Cron expression</Label>
+          <Label htmlFor={cronId}>Cron expression</Label>
           <Input
-            id="cron"
+            id={cronId}
             value={cronExpression ?? ""}
             placeholder="0 * * * *"
-            onChange={(e) =>
-              onCronChange(e.target.value.trim() ? e.target.value.trim() : null)
-            }
+            // The raw value is kept verbatim: trimming on every keystroke makes
+            // it impossible to type the spaces between cron fields. Validation
+            // and persistence trim it instead.
+            onChange={(e) => onCronChange(e.target.value || null)}
             aria-invalid={cronError ? true : undefined}
+            aria-describedby={cronError ? cronErrorId : cronHintId}
           />
-          <p className="text-xs text-muted-foreground">
+          <p id={cronHintId} className="text-xs text-muted-foreground">
             Standard 5-field cron (minute hour day-of-month month day-of-week).
           </p>
           {cronError ? (
-            <p className="text-xs text-destructive">{cronError}</p>
+            <p id={cronErrorId} className="text-xs text-destructive">
+              {cronError}
+            </p>
           ) : null}
         </div>
       ) : null}

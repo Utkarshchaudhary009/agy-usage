@@ -27,19 +27,19 @@ async function WakeupLoader({ userId }: { userId: string }) {
     getWakeupConfig(supabase, userId),
     supabase
       .from("google_accounts")
-      .select("id, email, display_name, is_active")
+      .select("id, email, display_name")
       .eq("clerk_user_id", userId)
       .order("added_at", { ascending: true }),
   ]);
 
   if (accountsResult.error) {
-    console.error("Failed to load accounts:", accountsResult.error);
+    throw new Error(`Failed to load accounts: ${accountsResult.error.message}`);
   }
 
   const accounts: WakeupAccount[] = (accountsResult.data ?? []).map((a) => ({
     id: a.id,
     email: a.email,
-    displayName: a.display_name,
+    displayName: a.display_name ?? null,
   }));
 
   return <WakeupConfigForm initialConfig={config} accounts={accounts} />;
