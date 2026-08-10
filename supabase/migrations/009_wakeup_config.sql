@@ -6,15 +6,20 @@ CREATE TABLE public.wakeup_configs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   clerk_user_id TEXT NOT NULL UNIQUE,
   enabled BOOLEAN DEFAULT false,
-  selected_models TEXT[] DEFAULT '{claude-sonnet-4-5,gemini-3-flash,gemini-3-pro-low}',
-  selected_account_ids UUID[] DEFAULT '{}',
+  selected_models TEXT[] DEFAULT '{claude-sonnet-4-5,gemini-3-flash,gemini-3-pro-low}'
+    CHECK (array_length(selected_models, 1) IS NULL OR array_length(selected_models, 1) <= 25),
+  selected_account_ids UUID[] DEFAULT '{}'
+    CHECK (array_length(selected_account_ids, 1) IS NULL OR array_length(selected_account_ids, 1) <= 100),
   schedule_mode TEXT DEFAULT 'interval'
     CHECK (schedule_mode IN ('interval', 'daily', 'custom')),
   interval_hours INTEGER DEFAULT 6
     CHECK (interval_hours >= 1 AND interval_hours <= 168),
-  daily_times TEXT[] DEFAULT '{09:00,15:00,21:00}',
-  cron_expression TEXT,
-  custom_prompt TEXT DEFAULT 'hi',
+  daily_times TEXT[] DEFAULT '{09:00,15:00,21:00}'
+    CHECK (array_length(daily_times, 1) IS NULL OR array_length(daily_times, 1) <= 50),
+  cron_expression TEXT
+    CHECK (cron_expression IS NULL OR length(cron_expression) <= 100),
+  custom_prompt TEXT DEFAULT 'hi'
+    CHECK (length(custom_prompt) <= 2000),
   max_output_tokens INTEGER DEFAULT 1
     CHECK (max_output_tokens >= 1 AND max_output_tokens <= 8192),
   cooldown_minutes INTEGER DEFAULT 60
@@ -27,13 +32,16 @@ CREATE TABLE public.wakeup_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   clerk_user_id TEXT NOT NULL,
   account_id UUID REFERENCES public.google_accounts(id) ON DELETE CASCADE,
-  model_id TEXT NOT NULL,
+  model_id TEXT NOT NULL
+    CHECK (length(model_id) <= 100),
   trigger_source TEXT NOT NULL
     CHECK (trigger_source IN ('manual', 'scheduled', 'quota_reset')),
   success BOOLEAN NOT NULL,
   duration_ms INTEGER,
-  error TEXT,
-  response_preview TEXT,
+  error TEXT
+    CHECK (length(error) <= 2000),
+  response_preview TEXT
+    CHECK (length(response_preview) <= 2000),
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -58,7 +66,17 @@ CREATE POLICY "Users manage their own wakeup logs"
   ON public.wakeup_logs
   FOR ALL TO authenticated
   USING (requesting_user_id() = clerk_user_id)
-  WITH CHECK (requesting_user_id() = clerk_user_id);
+  WITH CHECK (
+    requesting_user_id() = clerk_user_id
+    AND (
+      account_id IS NULL
+      OR EXISTS (
+        SELECT 1 FROM public.google_accounts ga
+        WHERE ga.id = account_id
+          AND ga.clerk_user_id = requesting_user_id()
+      )
+    )
+  );
 
 -- Keep updated_at fresh on every write.
 CREATE OR REPLACE FUNCTION public.touch_wakeup_updated_at()

@@ -12,6 +12,13 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
+// Bound untrusted input sizes to prevent storage/resource-exhaustion abuse.
+const CRON_MAX_LENGTH = 100;
+const PROMPT_MAX_LENGTH = 2000;
+const MAX_SELECTED_MODELS = 25;
+const MAX_ACCOUNT_IDS = 100;
+const MAX_DAILY_TIMES = 50;
+
 export interface WakeupConfigInput {
   enabled: boolean;
   selectedModels: string[];
@@ -81,6 +88,8 @@ export function validateWakeupInput(raw: unknown): ValidationResult {
     : [];
   if (selectedModels.length === 0) {
     errors.selectedModels = "Select at least one model.";
+  } else if (selectedModels.length > MAX_SELECTED_MODELS) {
+    errors.selectedModels = `Too many models selected (max ${MAX_SELECTED_MODELS}).`;
   } else if (!selectedModels.every(isWakeupModelId)) {
     errors.selectedModels = "One or more models are invalid.";
   }
@@ -88,7 +97,9 @@ export function validateWakeupInput(raw: unknown): ValidationResult {
   const selectedAccountIds = Array.isArray(body.selectedAccountIds)
     ? body.selectedAccountIds.filter((a): a is string => typeof a === "string")
     : [];
-  if (
+  if (selectedAccountIds.length > MAX_ACCOUNT_IDS) {
+    errors.selectedAccountIds = `Too many accounts selected (max ${MAX_ACCOUNT_IDS}).`;
+  } else if (
     selectedAccountIds.length > 0 &&
     !selectedAccountIds.every((a) => UUID_RE.test(a))
   ) {
@@ -111,16 +122,26 @@ export function validateWakeupInput(raw: unknown): ValidationResult {
   const dailyTimes = Array.isArray(body.dailyTimes)
     ? body.dailyTimes.filter((t): t is string => typeof t === "string")
     : [];
-  if (dailyTimes.length > 0 && !dailyTimes.every((t) => TIME_RE.test(t))) {
+  if (dailyTimes.length > MAX_DAILY_TIMES) {
+    errors.dailyTimes = `Too many times selected (max ${MAX_DAILY_TIMES}).`;
+  } else if (
+    dailyTimes.length > 0 &&
+    !dailyTimes.every((t) => TIME_RE.test(t))
+  ) {
     errors.dailyTimes = "Times must use HH:MM (24h) format.";
   }
 
   let cronExpression: string | null = null;
-  if (typeof body.cronExpression === "string" && body.cronExpression.trim()) {
-    cronExpression = body.cronExpression.trim();
+  if (typeof body.cronExpression === "string") {
+    if (body.cronExpression.trim().length > CRON_MAX_LENGTH) {
+      errors.cronExpression = `Cron expression is too long (max ${CRON_MAX_LENGTH} chars).`;
+    } else if (body.cronExpression.trim()) {
+      cronExpression = body.cronExpression.trim();
+    }
   }
   if (scheduleMode === "custom" && !cronExpression) {
-    errors.cronExpression = "A cron expression is required in custom mode.";
+    errors.cronExpression =
+      errors.cronExpression ?? "A cron expression is required in custom mode.";
   }
   let cronCheck: CronValidationResult = { valid: true };
   if (cronExpression) {
@@ -134,8 +155,8 @@ export function validateWakeupInput(raw: unknown): ValidationResult {
     typeof body.customPrompt === "string" && body.customPrompt.trim()
       ? body.customPrompt.trim()
       : DEFAULT_WAKEUP_CONFIG.customPrompt;
-  if (customPrompt.length > 2000) {
-    errors.customPrompt = "Prompt is too long (max 2000 chars).";
+  if (customPrompt.length > PROMPT_MAX_LENGTH) {
+    errors.customPrompt = `Prompt is too long (max ${PROMPT_MAX_LENGTH} chars).`;
   }
 
   const maxOutputTokens = toInt(
