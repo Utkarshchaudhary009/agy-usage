@@ -59,7 +59,7 @@ function SelectTrigger({ className, children, ...props }: SelectTriggerProps) {
 function SelectContent({
   className,
   children,
-  position = "item-aligned",
+  position = "popper",
   ...props
 }: SelectContentProps) {
   return (
