@@ -74,7 +74,7 @@ export async function PUT(req: NextRequest) {
 
   try {
     const supabase = await createServerClient();
-    const config = await saveWakeupConfig(supabase, userId, validation.data);
+    const config = await saveWakeupConfig(supabase, validation.data);
     return NextResponse.json({ config });
   } catch (err) {
     if (err instanceof AccountOwnershipError) {

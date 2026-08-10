@@ -235,76 +235,45 @@ export async function getWakeupConfig(
  * belongs to the authenticated user (RLS also enforces this, but we fail fast
  * with a clear validation error rather than a generic RLS rejection).
  *
- * Uses atomic validation + upsert to prevent race conditions where accounts
- * could be deleted or transfer ownership between validation and upsert steps.
+ * Identity is always derived from the Clerk-issued JWT inside the RPC via
+ * `requesting_user_id()` — the application never writes `clerk_user_id` from
+ * request input. This both prevents trusting client-supplied identity and keeps
+ * validation + upsert atomic, avoiding a race where an account could be
+ * deleted or reassigned between a separate validation query and the write.
  */
 export async function saveWakeupConfig(
   supabase: SupabaseClient<Database>,
-  clerkUserId: string,
   input: WakeupConfigInput,
 ): Promise<WakeupConfig> {
-  const selectedIds = input.selectedAccountIds;
+  const { data: validated, error: validatedErr } = await supabase.rpc(
+    "validate_and_upsert_wakeup_config",
+    {
+      p_enabled: input.enabled,
+      p_selected_models: input.selectedModels,
+      p_selected_account_ids: input.selectedAccountIds,
+      p_schedule_mode: input.scheduleMode,
+      p_interval_hours: input.intervalHours,
+      p_daily_times: input.dailyTimes,
+      p_cron_expression: input.cronExpression,
+      p_custom_prompt: input.customPrompt,
+      p_max_output_tokens: input.maxOutputTokens,
+      p_cooldown_minutes: input.cooldownMinutes,
+      p_wake_on_reset: input.wakeOnReset,
+    },
+  );
 
-  if (selectedIds.length > 0) {
-    // Atomic validation + upsert using a single transaction
-    const { data: validated, error: validatedErr } = await supabase.rpc(
-      "validate_and_upsert_wakeup_config",
-      {
-        p_enabled: input.enabled,
-        p_selected_models: input.selectedModels,
-        p_selected_account_ids: selectedIds,
-        p_schedule_mode: input.scheduleMode,
-        p_interval_hours: input.intervalHours,
-        p_daily_times: input.dailyTimes,
-        p_cron_expression: input.cronExpression,
-        p_custom_prompt: input.customPrompt,
-        p_max_output_tokens: input.maxOutputTokens,
-        p_cooldown_minutes: input.cooldownMinutes,
-        p_wake_on_reset: input.wakeOnReset,
-      },
-    );
-
-    if (validatedErr) {
-      if (validatedErr.message.includes("AccountOwnershipError")) {
-        throw new AccountOwnershipError();
-      }
-      throw new Error(`Failed to save wakeup config: ${validatedErr.message}`);
+  if (validatedErr) {
+    if (validatedErr.message.includes("AccountOwnershipError")) {
+      throw new AccountOwnershipError();
     }
-
-    if (!validated || !Array.isArray(validated) || validated.length === 0) {
-      throw new Error("Failed to save wakeup config: No data returned");
-    }
-
-    return rowToConfig(validated[0]);
+    throw new Error(`Failed to save wakeup config: ${validatedErr.message}`);
   }
 
-  // If no accounts selected, proceed with simple upsert
-  const row = {
-    clerk_user_id: clerkUserId,
-    enabled: input.enabled,
-    selected_models: input.selectedModels,
-    selected_account_ids: selectedIds,
-    schedule_mode: input.scheduleMode,
-    interval_hours: input.intervalHours,
-    daily_times: input.dailyTimes,
-    cron_expression: input.cronExpression,
-    custom_prompt: input.customPrompt,
-    max_output_tokens: input.maxOutputTokens,
-    cooldown_minutes: input.cooldownMinutes,
-    wake_on_reset: input.wakeOnReset,
-  };
-
-  const { data, error } = await supabase
-    .from("wakeup_configs")
-    .upsert(row, { onConflict: "clerk_user_id" })
-    .select("*")
-    .single();
-
-  if (error) {
-    throw new Error(`Failed to save wakeup config: ${error.message}`);
+  if (!validated || !Array.isArray(validated) || validated.length === 0) {
+    throw new Error("Failed to save wakeup config: No data returned");
   }
 
-  return rowToConfig(data);
+  return rowToConfig(validated[0]);
 }
 
 export function isPostgrestError(e: unknown): e is PostgrestError {
