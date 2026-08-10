@@ -9,6 +9,13 @@ import { decryptToken as decryptState } from "@/lib/google/state-crypto";
 import { createServiceClient } from "@/lib/supabase/server";
 import type { GoogleTokenResponse, GoogleUserInfo } from "@/lib/types/google";
 
+// Never statically evaluate this route at build time. It reads Google OAuth
+// env vars (GOOGLE_CLIENT_ID/SECRET) which may be absent during `next build`
+// on Vercel, and would otherwise throw "Missing GOOGLE_CLIENT_ID environment
+// variable" and abort the build. The OAuth config is validated lazily inside
+// the handler via assertGoogleOAuthConfig().
+export const dynamic = "force-dynamic";
+
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const url = req.nextUrl;
   const code = url.searchParams.get("code");
