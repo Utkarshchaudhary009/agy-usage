@@ -103,7 +103,6 @@ CREATE TRIGGER trg_wakeup_configs_updated_at
   EXECUTE FUNCTION public.touch_wakeup_updated_at();
 
 CREATE OR REPLACE FUNCTION public.validate_and_upsert_wakeup_config(
-  p_clerk_user_id TEXT,
   p_enabled BOOLEAN,
   p_selected_models TEXT[],
   p_selected_account_ids UUID[],
@@ -119,11 +118,20 @@ CREATE OR REPLACE FUNCTION public.validate_and_upsert_wakeup_config(
 RETURNS SETOF public.wakeup_configs
 LANGUAGE plpgsql
 AS $$
+DECLARE
+  v_clerk_user_id TEXT := public.requesting_user_id();
 BEGIN
+  -- Reject unauthenticated invocations early with a clear error rather than
+  -- relying solely on RLS. Identity is always derived from the Clerk-issued
+  -- JWT (requesting_user_id()), never from caller-supplied input.
+  IF v_clerk_user_id IS NULL THEN
+    RAISE EXCEPTION 'Unauthorized: no authenticated user.';
+  END IF;
+
   IF p_selected_account_ids IS NOT NULL AND array_length(p_selected_account_ids, 1) IS NOT NULL THEN
     IF EXISTS (
       SELECT 1 FROM unnest(p_selected_account_ids) AS aid
-      LEFT JOIN public.google_accounts ga ON ga.id = aid AND ga.clerk_user_id = public.requesting_user_id()
+      LEFT JOIN public.google_accounts ga ON ga.id = aid AND ga.clerk_user_id = v_clerk_user_id
       WHERE ga.id IS NULL
     ) THEN
       RAISE EXCEPTION 'AccountOwnershipError: One or more accounts do not belong to this user.';
@@ -136,7 +144,7 @@ BEGIN
     schedule_mode, interval_hours, daily_times, cron_expression,
     custom_prompt, max_output_tokens, cooldown_minutes, wake_on_reset, updated_at
   ) VALUES (
-    p_clerk_user_id, p_enabled, p_selected_models, p_selected_account_ids,
+    v_clerk_user_id, p_enabled, p_selected_models, p_selected_account_ids,
     p_schedule_mode, p_interval_hours, p_daily_times, p_cron_expression,
     p_custom_prompt, p_max_output_tokens, p_cooldown_minutes, p_wake_on_reset, NOW()
   )

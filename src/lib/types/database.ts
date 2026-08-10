@@ -401,7 +401,6 @@ export interface Database {
       };
       validate_and_upsert_wakeup_config: {
         Args: {
-          p_clerk_user_id: string;
           p_enabled: boolean;
           p_selected_models: string[];
           p_selected_account_ids: string[];

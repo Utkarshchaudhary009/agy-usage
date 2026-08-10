@@ -250,7 +250,6 @@ export async function saveWakeupConfig(
     const { data: validated, error: validatedErr } = await supabase.rpc(
       "validate_and_upsert_wakeup_config",
       {
-        p_clerk_user_id: clerkUserId,
         p_enabled: input.enabled,
         p_selected_models: input.selectedModels,
         p_selected_account_ids: selectedIds,
