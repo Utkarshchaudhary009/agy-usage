@@ -27,9 +27,10 @@ interface SchedulePickerProps {
   onCronChange: (expr: string | null) => void;
   cronError?: string;
   /**
-   * Radix slider thumbs are `span[role=slider]`, not form controls, so a
-   * wrapping `<fieldset disabled>` cannot reach them. The flag is forwarded
-   * explicitly.
+   * Forwarded to every control rather than relying on a wrapping
+   * `<fieldset disabled>`: Radix slider thumbs are `span[role=slider]` and the
+   * select trigger is portalled, so neither is reliably reached by the
+   * fieldset's implicit disabling.
    */
   disabled?: boolean;
 }
@@ -53,6 +54,9 @@ export function SchedulePicker({
   const cronHintId = `${uid}-cron-hint`;
 
   const atTimeLimit = dailyTimes.length >= WAKEUP_LIMITS.maxDailyTimes;
+  // A daily schedule with no times would never fire, so the last row is not
+  // removable (the server rejects an empty list in daily mode as well).
+  const canRemoveTime = dailyTimes.length > 1;
 
   function addDailyTime() {
     if (atTimeLimit) return;
@@ -67,6 +71,7 @@ export function SchedulePicker({
   }
 
   function removeDailyTime(index: number) {
+    if (!canRemoveTime) return;
     onDailyTimesChange(dailyTimes.filter((_, i) => i !== index));
   }
 
@@ -77,6 +82,7 @@ export function SchedulePicker({
         <Select
           value={mode}
           onValueChange={(v) => onModeChange(v as ScheduleMode)}
+          disabled={disabled}
         >
           <SelectTrigger id={modeId} className="w-full sm:w-56">
             <SelectValue />
@@ -126,6 +132,7 @@ export function SchedulePicker({
                   value={time}
                   onChange={(e) => updateDailyTime(index, e.target.value)}
                   className="w-40"
+                  disabled={disabled}
                   aria-label={`Trigger time ${index + 1}`}
                 />
                 <Button
@@ -133,6 +140,7 @@ export function SchedulePicker({
                   variant="ghost"
                   size="icon-sm"
                   onClick={() => removeDailyTime(index)}
+                  disabled={disabled || !canRemoveTime}
                   aria-label={`Remove ${time}`}
                 >
                   <X />
@@ -144,7 +152,7 @@ export function SchedulePicker({
               variant="outline"
               size="sm"
               onClick={addDailyTime}
-              disabled={atTimeLimit}
+              disabled={disabled || atTimeLimit}
               className="w-fit"
             >
               <Plus />
@@ -153,6 +161,11 @@ export function SchedulePicker({
             {atTimeLimit ? (
               <p className="text-xs text-muted-foreground">
                 Maximum of {WAKEUP_LIMITS.maxDailyTimes} trigger times reached.
+              </p>
+            ) : null}
+            {!canRemoveTime ? (
+              <p className="text-xs text-muted-foreground">
+                At least one trigger time is required.
               </p>
             ) : null}
           </div>

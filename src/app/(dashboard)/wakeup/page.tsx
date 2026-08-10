@@ -32,8 +32,18 @@ async function WakeupLoader({ userId }: { userId: string }) {
       .order("added_at", { ascending: true }),
   ]);
 
+  // A transient accounts query failure must not take down the whole route with
+  // Next's generic error page — the rest of the configuration is still usable,
+  // so the failure is reported inline (same approach as the Accounts page).
   if (accountsResult.error) {
-    throw new Error(`Failed to load accounts: ${accountsResult.error.message}`);
+    console.error("Failed to load accounts:", accountsResult.error);
+    return (
+      <WakeupConfigForm
+        initialConfig={config}
+        accounts={[]}
+        accountsLoadFailed
+      />
+    );
   }
 
   const accounts: WakeupAccount[] = (accountsResult.data ?? []).map((a) => ({

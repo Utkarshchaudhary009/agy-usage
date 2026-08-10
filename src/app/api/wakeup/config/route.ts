@@ -88,7 +88,12 @@ export async function PUT(req: NextRequest) {
       );
     }
     if (isPostgrestError(err)) {
-      console.error("Wakeup config save PostgrestError:", err);
+      console.error("Wakeup config save PostgrestError:", {
+        code: err.code,
+        details: err.details,
+        hint: err.hint,
+        message: err.message,
+      });
     } else {
       console.error("Wakeup config save error:", err);
     }

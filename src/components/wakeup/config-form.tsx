@@ -31,12 +31,35 @@ function formatNext(date: Date | null): string {
   });
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Extracts `{ fields: { field: message } }` from an untyped error payload. */
+function readFieldErrors(payload: unknown): Record<string, string> | null {
+  if (!isRecord(payload) || !isRecord(payload.fields)) return null;
+  const fields: Record<string, string> = {};
+  for (const [key, value] of Object.entries(payload.fields)) {
+    if (typeof value === "string") fields[key] = value;
+  }
+  return Object.keys(fields).length > 0 ? fields : null;
+}
+
+/** Extracts `{ message }` from an untyped error payload. */
+function readMessage(payload: unknown): string | null {
+  if (!isRecord(payload)) return null;
+  return typeof payload.message === "string" ? payload.message : null;
+}
+
 export function WakeupConfigForm({
   initialConfig,
   accounts,
+  accountsLoadFailed = false,
 }: {
   initialConfig: WakeupConfig;
   accounts: WakeupAccount[];
+  /** True when the linked-account query failed; the rest stays editable. */
+  accountsLoadFailed?: boolean;
 }) {
   const [enabled, setEnabled] = useState(initialConfig.enabled);
   const [selectedModels, setSelectedModels] = useState(
@@ -87,9 +110,12 @@ export function WakeupConfigForm({
     });
   }, [mounted, scheduleMode, intervalHours, dailyTimes, cronExpression]);
 
-  const allAccountsSelected =
-    selectedAccountIds.length === 0 ||
-    selectedAccountIds.length === accounts.length;
+  // Empty means "every linked account", which reads very differently from the
+  // state where every checkbox happens to be ticked, so the two are described
+  // separately.
+  const noAccountsSelected = selectedAccountIds.length === 0;
+  const everyAccountSelected =
+    accounts.length > 0 && selectedAccountIds.length === accounts.length;
 
   function toggleAccount(id: string, checked: boolean) {
     if (checked) {
@@ -124,14 +150,18 @@ export function WakeupConfigForm({
         body: JSON.stringify(payload),
       });
 
-      const json = await res.json();
+      // The body is untrusted: a proxy or an unexpected failure can return
+      // HTML or nothing at all, and a parse error here would otherwise be
+      // reported as a network failure.
+      const json = await res.json().catch(() => null);
 
       if (!res.ok) {
-        if (res.status === 400 && json.fields) {
-          setFieldErrors(json.fields as Record<string, string>);
+        const fields = readFieldErrors(json);
+        if (res.status === 400 && fields) {
+          setFieldErrors(fields);
           toast.error("Please fix the highlighted fields.");
         } else {
-          toast.error(json.message ?? "Failed to save settings.");
+          toast.error(readMessage(json) ?? "Failed to save settings.");
         }
         return;
       }
@@ -164,9 +194,14 @@ export function WakeupConfigForm({
           </div>
         </CardHeader>
         <CardContent>
-          <div
-            className={cn(!enabled && "pointer-events-none opacity-50")}
-            aria-hidden={!enabled}
+          {/* A real `<fieldset disabled>` rather than pointer-events/aria-hidden
+              styling: it removes the controls from the tab order and blocks
+              edits for keyboard users too. The master switch (in the header)
+              and the Save row below stay outside it, so a user can always
+              persist `enabled: false`. */}
+          <fieldset
+            disabled={!enabled}
+            className={cn("min-w-0", !enabled && "opacity-50")}
           >
             <div className="grid gap-6 lg:grid-cols-2">
               <div className="space-y-4">
@@ -178,7 +213,12 @@ export function WakeupConfigForm({
 
                 <div className="space-y-2">
                   <Label>Accounts</Label>
-                  {accounts.length === 0 ? (
+                  {accountsLoadFailed ? (
+                    <p className="text-sm text-destructive">
+                      Could not load your linked accounts. Reload the page to
+                      try again — your other settings can still be saved.
+                    </p>
+                  ) : accounts.length === 0 ? (
                     <p className="text-sm text-muted-foreground">
                       No Google accounts linked yet. Link an account from the
                       Accounts page to enable wakeups.
@@ -204,9 +244,11 @@ export function WakeupConfigForm({
                         </label>
                       ))}
                       <p className="text-xs text-muted-foreground">
-                        {allAccountsSelected
+                        {noAccountsSelected
                           ? "No accounts selected — all linked accounts will be woken."
-                          : `Waking ${selectedAccountIds.length} of ${accounts.length} accounts.`}
+                          : everyAccountSelected
+                            ? "All linked accounts will be woken."
+                            : `Waking ${selectedAccountIds.length} of ${accounts.length} accounts.`}
                       </p>
                     </div>
                   )}
@@ -304,31 +346,31 @@ export function WakeupConfigForm({
                 </label>
               </div>
             </div>
+          </fieldset>
 
-            <Separator className="my-6" />
+          <Separator className="my-6" />
 
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-sm text-muted-foreground">
-                <p>
-                  {describeSchedule({
-                    scheduleMode,
-                    intervalHours,
-                    dailyTimes,
-                    cronExpression,
-                  })}
-                </p>
-                <p>
-                  Next trigger:{" "}
-                  <span className="font-medium text-foreground">
-                    {enabled ? formatNext(nextTrigger) : "disabled"}
-                  </span>
-                </p>
-              </div>
-              <Button onClick={handleSave} disabled={saving}>
-                {saving ? <Loader2 className="animate-spin" /> : <Save />}
-                {saving ? "Saving…" : "Save settings"}
-              </Button>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm text-muted-foreground">
+              <p>
+                {describeSchedule({
+                  scheduleMode,
+                  intervalHours,
+                  dailyTimes,
+                  cronExpression,
+                })}
+              </p>
+              <p>
+                Next trigger:{" "}
+                <span className="font-medium text-foreground">
+                  {enabled ? formatNext(nextTrigger) : "disabled"}
+                </span>
+              </p>
             </div>
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? <Loader2 className="animate-spin" /> : <Save />}
+              {saving ? "Saving…" : "Save settings"}
+            </Button>
           </div>
         </CardContent>
       </Card>

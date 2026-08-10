@@ -15,6 +15,14 @@ const UUID_RE =
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 /**
+ * SQLSTATE raised by `validate_and_upsert_wakeup_config` when a selected
+ * account is not owned by the requesting user. Matching on the code (rather
+ * than the message text) keeps the contract with the migration stable.
+ * @see supabase/migrations/009_wakeup_config.sql
+ */
+const ACCOUNT_OWNERSHIP_SQLSTATE = "WK403";
+
+/**
  * Thrown when a user attempts to save a config referencing account IDs that
  * are not owned by them. Surfaced to the API layer as a 403.
  */
@@ -72,13 +80,13 @@ export function validateWakeupInput(raw: unknown): ValidationResult {
   }
   const body = raw as Record<string, unknown>;
 
-  const enabled = body.enabled === true;
-  const wakeOnReset = body.wakeOnReset === true;
+  const enabled = readBoolean(body.enabled, "enabled", errors);
+  const wakeOnReset = readBoolean(body.wakeOnReset, "wakeOnReset", errors);
 
-  const selectedModels = Array.isArray(body.selectedModels)
-    ? body.selectedModels.filter((m): m is string => typeof m === "string")
-    : [];
-  if (selectedModels.length === 0) {
+  const selectedModels = readStringArray(body.selectedModels);
+  if (selectedModels === null) {
+    errors.selectedModels = "Models must be an array of strings.";
+  } else if (selectedModels.length === 0) {
     errors.selectedModels = "Select at least one model.";
   } else if (selectedModels.length > WAKEUP_LIMITS.maxSelectedModels) {
     errors.selectedModels = `Too many models selected (max ${WAKEUP_LIMITS.maxSelectedModels}).`;
@@ -86,22 +94,26 @@ export function validateWakeupInput(raw: unknown): ValidationResult {
     errors.selectedModels = "One or more models are invalid.";
   }
 
-  const selectedAccountIds = Array.isArray(body.selectedAccountIds)
-    ? body.selectedAccountIds.filter((a): a is string => typeof a === "string")
-    : [];
-  if (selectedAccountIds.length > WAKEUP_LIMITS.maxAccountIds) {
+  // An empty array means "every linked account", so a malformed value must be
+  // rejected rather than coerced — silently dropping bad entries would widen
+  // the request instead of failing it.
+  const selectedAccountIds = readStringArray(body.selectedAccountIds);
+  if (selectedAccountIds === null) {
+    errors.selectedAccountIds = "Account IDs must be an array of strings.";
+  } else if (selectedAccountIds.length > WAKEUP_LIMITS.maxAccountIds) {
     errors.selectedAccountIds = `Too many accounts selected (max ${WAKEUP_LIMITS.maxAccountIds}).`;
-  } else if (
-    selectedAccountIds.length > 0 &&
-    !selectedAccountIds.every((a) => UUID_RE.test(a))
-  ) {
+  } else if (!selectedAccountIds.every((a) => UUID_RE.test(a))) {
     errors.selectedAccountIds = "One or more account IDs are invalid.";
   }
 
   const allowedModes = ["interval", "daily", "custom"] as const;
-  const scheduleMode = allowedModes.includes(body.scheduleMode as never)
+  const isAllowedMode = allowedModes.includes(body.scheduleMode as never);
+  if (body.scheduleMode !== undefined && !isAllowedMode) {
+    errors.scheduleMode = "Schedule mode must be interval, daily, or custom.";
+  }
+  const scheduleMode = isAllowedMode
     ? (body.scheduleMode as (typeof allowedModes)[number])
-    : "interval";
+    : DEFAULT_WAKEUP_CONFIG.scheduleMode;
 
   const intervalHours = toInt(
     body.intervalHours,
@@ -114,16 +126,16 @@ export function validateWakeupInput(raw: unknown): ValidationResult {
     errors.intervalHours = `Interval must be between ${WAKEUP_LIMITS.intervalHours.min} and ${WAKEUP_LIMITS.intervalHours.max} hours.`;
   }
 
-  const dailyTimes = Array.isArray(body.dailyTimes)
-    ? body.dailyTimes.filter((t): t is string => typeof t === "string")
-    : [];
-  if (dailyTimes.length > WAKEUP_LIMITS.maxDailyTimes) {
+  const dailyTimes = readStringArray(body.dailyTimes);
+  if (dailyTimes === null) {
+    errors.dailyTimes = "Times must be an array of strings.";
+  } else if (dailyTimes.length > WAKEUP_LIMITS.maxDailyTimes) {
     errors.dailyTimes = `Too many times selected (max ${WAKEUP_LIMITS.maxDailyTimes}).`;
-  } else if (
-    dailyTimes.length > 0 &&
-    !dailyTimes.every((t) => TIME_RE.test(t))
-  ) {
+  } else if (!dailyTimes.every((t) => TIME_RE.test(t))) {
     errors.dailyTimes = "Times must use HH:MM (24h) format.";
+  } else if (scheduleMode === "daily" && dailyTimes.length === 0) {
+    // A daily schedule with no times would never fire.
+    errors.dailyTimes = "Add at least one trigger time.";
   }
 
   let cronExpression: string | null = null;
@@ -176,7 +188,14 @@ export function validateWakeupInput(raw: unknown): ValidationResult {
     errors.cooldownMinutes = `Cooldown must be between ${WAKEUP_LIMITS.cooldownMinutes.min} and ${WAKEUP_LIMITS.cooldownMinutes.max} minutes.`;
   }
 
-  if (Object.keys(errors).length > 0) {
+  // The null checks are redundant with `errors` (each one already recorded a
+  // message) but they narrow the types for the success payload below.
+  if (
+    Object.keys(errors).length > 0 ||
+    selectedModels === null ||
+    selectedAccountIds === null ||
+    dailyTimes === null
+  ) {
     return { valid: false, errors };
   }
 
@@ -208,6 +227,36 @@ function toInt(value: unknown, fallback: number): number {
     if (Number.isFinite(n)) return Math.trunc(n);
   }
   return fallback;
+}
+
+/**
+ * Reads a boolean field. An omitted field falls back to the default, but a
+ * present non-boolean value is reported rather than coerced — `"false"`,
+ * `0` or `null` must not silently become `false`.
+ */
+function readBoolean(
+  value: unknown,
+  field: "enabled" | "wakeOnReset",
+  errors: Record<string, string>,
+): boolean {
+  if (value === undefined) return DEFAULT_WAKEUP_CONFIG[field];
+  if (typeof value === "boolean") return value;
+  errors[field] = "Value must be true or false.";
+  return DEFAULT_WAKEUP_CONFIG[field];
+}
+
+/**
+ * Reads an array-of-strings field. Returns `null` when the value is present
+ * but is not an array of strings, so the caller can reject the request instead
+ * of quietly dropping the offending entries.
+ */
+function readStringArray(value: unknown): string[] | null {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) return null;
+  if (!value.every((item): item is string => typeof item === "string")) {
+    return null;
+  }
+  return value;
 }
 
 /**
@@ -263,10 +312,13 @@ export async function saveWakeupConfig(
   );
 
   if (validatedErr) {
-    if (validatedErr.message.includes("AccountOwnershipError")) {
+    if (validatedErr.code === ACCOUNT_OWNERSHIP_SQLSTATE) {
       throw new AccountOwnershipError();
     }
-    throw new Error(`Failed to save wakeup config: ${validatedErr.message}`);
+    // Rethrown as-is (PostgrestError extends Error) so the API layer keeps the
+    // `code`/`details`/`hint` metadata for logging instead of a flattened
+    // message string.
+    throw validatedErr;
   }
 
   if (!validated || !Array.isArray(validated) || validated.length === 0) {

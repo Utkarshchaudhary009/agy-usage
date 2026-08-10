@@ -2,30 +2,33 @@
 -- Wakeup configuration + logs
 -- ============================================================================
 
+-- Every column the generated `Database` row type describes as non-nullable is
+-- NOT NULL here: a DEFAULT alone is not enough, because a direct write may pass
+-- an explicit NULL and the UI would then crash on a value the types promise.
 CREATE TABLE public.wakeup_configs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   clerk_user_id TEXT NOT NULL UNIQUE,
-  enabled BOOLEAN DEFAULT false,
-  selected_models TEXT[] DEFAULT '{claude-sonnet-4-5,gemini-3-flash,gemini-3-pro-low}'
+  enabled BOOLEAN NOT NULL DEFAULT false,
+  selected_models TEXT[] NOT NULL DEFAULT '{claude-sonnet-4-5,gemini-3-flash,gemini-3-pro-low}'
     CHECK (array_length(selected_models, 1) IS NULL OR array_length(selected_models, 1) <= 25),
-  selected_account_ids UUID[] DEFAULT '{}'
+  selected_account_ids UUID[] NOT NULL DEFAULT '{}'
     CHECK (array_length(selected_account_ids, 1) IS NULL OR array_length(selected_account_ids, 1) <= 100),
-  schedule_mode TEXT DEFAULT 'interval'
+  schedule_mode TEXT NOT NULL DEFAULT 'interval'
     CHECK (schedule_mode IN ('interval', 'daily', 'custom')),
-  interval_hours INTEGER DEFAULT 6
+  interval_hours INTEGER NOT NULL DEFAULT 6
     CHECK (interval_hours >= 1 AND interval_hours <= 168),
-  daily_times TEXT[] DEFAULT '{09:00,15:00,21:00}'
+  daily_times TEXT[] NOT NULL DEFAULT '{09:00,15:00,21:00}'
     CHECK (array_length(daily_times, 1) IS NULL OR array_length(daily_times, 1) <= 50),
   cron_expression TEXT
     CHECK (cron_expression IS NULL OR length(cron_expression) <= 100),
-  custom_prompt TEXT DEFAULT 'hi'
+  custom_prompt TEXT NOT NULL DEFAULT 'hi'
     CHECK (length(custom_prompt) <= 2000),
-  max_output_tokens INTEGER DEFAULT 1
+  max_output_tokens INTEGER NOT NULL DEFAULT 1
     CHECK (max_output_tokens >= 1 AND max_output_tokens <= 8192),
-  cooldown_minutes INTEGER DEFAULT 60
+  cooldown_minutes INTEGER NOT NULL DEFAULT 60
     CHECK (cooldown_minutes >= 0 AND cooldown_minutes <= 1440),
-  wake_on_reset BOOLEAN DEFAULT false,
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  wake_on_reset BOOLEAN NOT NULL DEFAULT false,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE public.wakeup_logs (
@@ -42,11 +45,11 @@ CREATE TABLE public.wakeup_logs (
     CHECK (length(error) <= 2000),
   response_preview TEXT
     CHECK (length(response_preview) <= 2000),
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_wakeup_configs_user
-  ON public.wakeup_configs (clerk_user_id);
+-- `clerk_user_id TEXT NOT NULL UNIQUE` on wakeup_configs already provides a
+-- unique btree index, so no additional index is created for it here.
 CREATE INDEX idx_wakeup_logs_time
   ON public.wakeup_logs (clerk_user_id, created_at DESC);
 CREATE INDEX idx_wakeup_logs_account
@@ -71,36 +74,63 @@ CREATE POLICY "Users manage their own wakeup config"
     )
   );
 
+-- Wakeup logs are server-generated execution history. Clients may read their
+-- own rows but never write them: an authenticated user who could INSERT/UPDATE
+-- here would be able to forge history or suppress their own scheduled wakeups
+-- by future-dating a row. Writes are performed by the service-role trigger
+-- engine, which bypasses RLS.
 ALTER TABLE public.wakeup_logs ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users manage their own wakeup logs"
+CREATE POLICY "Users read their own wakeup logs"
   ON public.wakeup_logs
-  FOR ALL TO authenticated
-  USING (requesting_user_id() = clerk_user_id)
-  WITH CHECK (
-    requesting_user_id() = clerk_user_id
-    AND (
-      account_id IS NULL
-      OR EXISTS (
-        SELECT 1 FROM public.google_accounts ga
-        WHERE ga.id = account_id
-          AND ga.clerk_user_id = requesting_user_id()
-      )
-    )
-  );
+  FOR SELECT TO authenticated
+  USING (requesting_user_id() = clerk_user_id);
 
 -- Keep updated_at fresh on every write.
 CREATE OR REPLACE FUNCTION public.touch_wakeup_updated_at()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $$
 BEGIN
   NEW.updated_at = NOW();
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 CREATE TRIGGER trg_wakeup_configs_updated_at
   BEFORE UPDATE ON public.wakeup_configs
   FOR EACH ROW
   EXECUTE FUNCTION public.touch_wakeup_updated_at();
+
+-- selected_account_ids is a plain UUID[] with no foreign key, so removing a
+-- linked Google account would otherwise leave a dangling ID behind and every
+-- later save would fail the ownership check with a misleading "accounts do not
+-- belong to this user" error. Prune the ID as soon as the account disappears.
+-- SECURITY DEFINER because deletions also run from service-role and from
+-- delete_account_with_tokens(); the update is scoped to the deleted account's
+-- own owner, so it cannot touch another user's configuration.
+CREATE OR REPLACE FUNCTION public.prune_deleted_account_from_wakeup_configs()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+BEGIN
+  UPDATE public.wakeup_configs
+  SET selected_account_ids = array_remove(selected_account_ids, OLD.id)
+  WHERE clerk_user_id = OLD.clerk_user_id
+    AND selected_account_ids @> ARRAY[OLD.id];
+  RETURN OLD;
+END;
+$$;
+
+CREATE TRIGGER trg_prune_wakeup_account_ids
+  AFTER DELETE ON public.google_accounts
+  FOR EACH ROW
+  EXECUTE FUNCTION public.prune_deleted_account_from_wakeup_configs();
+
+REVOKE EXECUTE ON FUNCTION public.prune_deleted_account_from_wakeup_configs()
+  FROM PUBLIC, anon, authenticated;
 
 CREATE OR REPLACE FUNCTION public.validate_and_upsert_wakeup_config(
   p_enabled BOOLEAN,
@@ -117,6 +147,7 @@ CREATE OR REPLACE FUNCTION public.validate_and_upsert_wakeup_config(
 )
 RETURNS SETOF public.wakeup_configs
 LANGUAGE plpgsql
+SET search_path = pg_catalog, public
 AS $$
 DECLARE
   v_clerk_user_id TEXT := public.requesting_user_id();
@@ -134,7 +165,11 @@ BEGIN
       LEFT JOIN public.google_accounts ga ON ga.id = aid AND ga.clerk_user_id = v_clerk_user_id
       WHERE ga.id IS NULL
     ) THEN
-      RAISE EXCEPTION 'AccountOwnershipError: One or more accounts do not belong to this user.';
+      -- Signalled with a dedicated SQLSTATE rather than a magic message
+      -- prefix: PostgREST surfaces it as `error.code`, which is a stable
+      -- contract the API layer maps to HTTP 403.
+      RAISE EXCEPTION 'One or more accounts do not belong to this user.'
+        USING ERRCODE = 'WK403';
     END IF;
   END IF;
 

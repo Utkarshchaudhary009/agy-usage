@@ -10,7 +10,13 @@ const CRON_FIELD_BOUNDS: ReadonlyArray<[number, number]> = [
 ];
 
 const MINUTE_MS = 60 * 1000;
-const PREVIEW_HORIZON_DAYS = 366;
+/**
+ * How far ahead `nextTriggerPreview` searches. February 29 recurs every four
+ * years, and every eight across a non-leap century boundary (2096 -> 2104), so
+ * a shorter window would report "no next trigger" for a schedule that is
+ * genuinely going to run.
+ */
+const PREVIEW_HORIZON_YEARS = 8;
 
 export interface CronValidationResult {
   valid: boolean;
@@ -19,18 +25,22 @@ export interface CronValidationResult {
 
 /**
  * A cron expression expanded into the concrete set of values each field
- * accepts: [minute, hour, day-of-month, month, day-of-week].
+ * accepts, plus whether the two day fields are restricted (i.e. not `*`).
  *
  * Expanding once up front keeps `nextCronTrigger` free of per-candidate regex
  * work, which matters because the preview is computed during render.
  */
-type CompiledCron = readonly [
-  Set<number>,
-  Set<number>,
-  Set<number>,
-  Set<number>,
-  Set<number>,
-];
+interface CompiledCron {
+  minutes: Set<number>;
+  hours: Set<number>;
+  daysOfMonth: Set<number>;
+  months: Set<number>;
+  daysOfWeek: Set<number>;
+  /** True when the day-of-month field is anything other than `*`. */
+  dayOfMonthRestricted: boolean;
+  /** True when the day-of-week field is anything other than `*`. */
+  dayOfWeekRestricted: boolean;
+}
 
 interface CronCompileResult {
   cron?: CompiledCron;
@@ -119,7 +129,18 @@ function compileCron(expression: string): CronCompileResult {
     fields.push(values);
   }
 
-  return { cron: fields as unknown as CompiledCron };
+  const [minutes, hours, daysOfMonth, months, daysOfWeek] = fields;
+  return {
+    cron: {
+      minutes,
+      hours,
+      daysOfMonth,
+      months,
+      daysOfWeek,
+      dayOfMonthRestricted: parts[2] !== "*",
+      dayOfWeekRestricted: parts[4] !== "*",
+    },
+  };
 }
 
 /**
@@ -201,27 +222,42 @@ function nextDailyTrigger(times: string[], from: Date): Date | null {
  * minutes it contains. This keeps even never-matching expressions
  * (e.g. `0 0 30 2 *`) to a few hundred iterations.
  *
- * Note: day-of-month and day-of-week are ANDed. Vixie cron ORs them when both
- * are restricted; this implementation intentionally keeps the stricter rule so
- * the preview never claims a trigger the scheduler would not run.
+ * Day matching follows Vixie cron: when both day-of-month and day-of-week are
+ * restricted the two are ORed (`0 9 1 * 1` fires on the 1st *and* on every
+ * Monday); when only one is restricted, that one alone decides.
  */
 function nextCronTrigger(cron: CompiledCron, from: Date): Date | null {
-  const [minutes, hours, daysOfMonth, months, daysOfWeek] = cron;
+  const {
+    minutes,
+    hours,
+    daysOfMonth,
+    months,
+    daysOfWeek,
+    dayOfMonthRestricted,
+    dayOfWeekRestricted,
+  } = cron;
 
-  const limit = from.getTime() + PREVIEW_HORIZON_DAYS * 24 * 60 * MINUTE_MS;
+  const limit = new Date(from.getTime());
+  limit.setFullYear(limit.getFullYear() + PREVIEW_HORIZON_YEARS);
+
   const cursor = new Date(from.getTime());
   cursor.setSeconds(0, 0);
   cursor.setMinutes(cursor.getMinutes() + 1);
 
-  while (cursor.getTime() <= limit) {
+  while (cursor.getTime() <= limit.getTime()) {
     if (!months.has(cursor.getMonth() + 1)) {
       cursor.setMonth(cursor.getMonth() + 1, 1);
       cursor.setHours(0, 0, 0, 0);
       continue;
     }
     if (
-      !daysOfMonth.has(cursor.getDate()) ||
-      !daysOfWeek.has(cursor.getDay())
+      !matchesDay(
+        cursor,
+        daysOfMonth,
+        daysOfWeek,
+        dayOfMonthRestricted,
+        dayOfWeekRestricted,
+      )
     ) {
       cursor.setDate(cursor.getDate() + 1);
       cursor.setHours(0, 0, 0, 0);
@@ -239,6 +275,22 @@ function nextCronTrigger(cron: CompiledCron, from: Date): Date | null {
   }
 
   return null;
+}
+
+function matchesDay(
+  date: Date,
+  daysOfMonth: Set<number>,
+  daysOfWeek: Set<number>,
+  dayOfMonthRestricted: boolean,
+  dayOfWeekRestricted: boolean,
+): boolean {
+  const domMatches = daysOfMonth.has(date.getDate());
+  const dowMatches = daysOfWeek.has(date.getDay());
+
+  if (dayOfMonthRestricted && dayOfWeekRestricted) {
+    return domMatches || dowMatches;
+  }
+  return domMatches && dowMatches;
 }
 
 export function describeSchedule(
