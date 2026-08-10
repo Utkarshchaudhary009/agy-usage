@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import type { ScheduleMode } from "@/lib/types/wakeup";
+import { WAKEUP_LIMITS } from "@/lib/types/wakeup";
 
 export function SchedulePicker({
   mode,
@@ -78,8 +79,8 @@ export function SchedulePicker({
           </div>
           <Slider
             value={[intervalHours]}
-            min={1}
-            max={168}
+            min={WAKEUP_LIMITS.intervalHours.min}
+            max={WAKEUP_LIMITS.intervalHours.max}
             step={1}
             onValueChange={(v) => onIntervalChange(v[0] ?? 1)}
           />

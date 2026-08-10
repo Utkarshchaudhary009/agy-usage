@@ -12,19 +12,14 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { ModelSelector } from "@/components/wakeup/model-selector";
 import { SchedulePicker } from "@/components/wakeup/schedule-picker";
-import type { WakeupConfig } from "@/lib/types/wakeup";
+import type { WakeupAccount, WakeupConfig } from "@/lib/types/wakeup";
+import { WAKEUP_LIMITS } from "@/lib/types/wakeup";
 import { cn } from "@/lib/utils";
 import {
   describeSchedule,
   nextTriggerPreview,
   validateCron,
 } from "@/lib/wakeup/schedule";
-
-interface LinkedAccount {
-  id: string;
-  email: string;
-  displayName: string | null;
-}
 
 function formatNext(date: Date | null): string {
   if (!date) return "—";
@@ -41,7 +36,7 @@ export function WakeupConfigForm({
   accounts,
 }: {
   initialConfig: WakeupConfig;
-  accounts: LinkedAccount[];
+  accounts: WakeupAccount[];
 }) {
   const [enabled, setEnabled] = useState(initialConfig.enabled);
   const [selectedModels, setSelectedModels] = useState(
@@ -248,8 +243,8 @@ export function WakeupConfigForm({
                     <Input
                       id="tokens"
                       type="number"
-                      min={1}
-                      max={8192}
+                      min={WAKEUP_LIMITS.maxOutputTokens.min}
+                      max={WAKEUP_LIMITS.maxOutputTokens.max}
                       value={maxOutputTokens}
                       onChange={(e) => setMaxOutputTokens(e.target.value)}
                       aria-invalid={
@@ -267,8 +262,8 @@ export function WakeupConfigForm({
                     <Input
                       id="cooldown"
                       type="number"
-                      min={0}
-                      max={1440}
+                      min={WAKEUP_LIMITS.cooldownMinutes.min}
+                      max={WAKEUP_LIMITS.cooldownMinutes.max}
                       value={cooldownMinutes}
                       onChange={(e) => setCooldownMinutes(e.target.value)}
                       aria-invalid={

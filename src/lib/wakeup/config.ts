@@ -4,6 +4,7 @@ import type { Database } from "@/lib/types/database";
 import {
   DEFAULT_WAKEUP_CONFIG,
   isWakeupModelId,
+  WAKEUP_LIMITS,
   type WakeupConfig,
   type WakeupConfigInput,
 } from "@/lib/types/wakeup";
@@ -12,13 +13,6 @@ import { type CronValidationResult, validateCron } from "@/lib/wakeup/schedule";
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
-
-// Bound untrusted input sizes to prevent storage/resource-exhaustion abuse.
-const CRON_MAX_LENGTH = 100;
-const PROMPT_MAX_LENGTH = 2000;
-const MAX_SELECTED_MODELS = 25;
-const MAX_ACCOUNT_IDS = 100;
-const MAX_DAILY_TIMES = 50;
 
 /**
  * Thrown when a user attempts to save a config referencing account IDs that
@@ -86,8 +80,8 @@ export function validateWakeupInput(raw: unknown): ValidationResult {
     : [];
   if (selectedModels.length === 0) {
     errors.selectedModels = "Select at least one model.";
-  } else if (selectedModels.length > MAX_SELECTED_MODELS) {
-    errors.selectedModels = `Too many models selected (max ${MAX_SELECTED_MODELS}).`;
+  } else if (selectedModels.length > WAKEUP_LIMITS.maxSelectedModels) {
+    errors.selectedModels = `Too many models selected (max ${WAKEUP_LIMITS.maxSelectedModels}).`;
   } else if (!selectedModels.every(isWakeupModelId)) {
     errors.selectedModels = "One or more models are invalid.";
   }
@@ -95,8 +89,8 @@ export function validateWakeupInput(raw: unknown): ValidationResult {
   const selectedAccountIds = Array.isArray(body.selectedAccountIds)
     ? body.selectedAccountIds.filter((a): a is string => typeof a === "string")
     : [];
-  if (selectedAccountIds.length > MAX_ACCOUNT_IDS) {
-    errors.selectedAccountIds = `Too many accounts selected (max ${MAX_ACCOUNT_IDS}).`;
+  if (selectedAccountIds.length > WAKEUP_LIMITS.maxAccountIds) {
+    errors.selectedAccountIds = `Too many accounts selected (max ${WAKEUP_LIMITS.maxAccountIds}).`;
   } else if (
     selectedAccountIds.length > 0 &&
     !selectedAccountIds.every((a) => UUID_RE.test(a))
@@ -113,15 +107,18 @@ export function validateWakeupInput(raw: unknown): ValidationResult {
     body.intervalHours,
     DEFAULT_WAKEUP_CONFIG.intervalHours,
   );
-  if (intervalHours < 1 || intervalHours > 168) {
-    errors.intervalHours = "Interval must be between 1 and 168 hours.";
+  if (
+    intervalHours < WAKEUP_LIMITS.intervalHours.min ||
+    intervalHours > WAKEUP_LIMITS.intervalHours.max
+  ) {
+    errors.intervalHours = `Interval must be between ${WAKEUP_LIMITS.intervalHours.min} and ${WAKEUP_LIMITS.intervalHours.max} hours.`;
   }
 
   const dailyTimes = Array.isArray(body.dailyTimes)
     ? body.dailyTimes.filter((t): t is string => typeof t === "string")
     : [];
-  if (dailyTimes.length > MAX_DAILY_TIMES) {
-    errors.dailyTimes = `Too many times selected (max ${MAX_DAILY_TIMES}).`;
+  if (dailyTimes.length > WAKEUP_LIMITS.maxDailyTimes) {
+    errors.dailyTimes = `Too many times selected (max ${WAKEUP_LIMITS.maxDailyTimes}).`;
   } else if (
     dailyTimes.length > 0 &&
     !dailyTimes.every((t) => TIME_RE.test(t))
@@ -131,8 +128,8 @@ export function validateWakeupInput(raw: unknown): ValidationResult {
 
   let cronExpression: string | null = null;
   if (typeof body.cronExpression === "string") {
-    if (body.cronExpression.trim().length > CRON_MAX_LENGTH) {
-      errors.cronExpression = `Cron expression is too long (max ${CRON_MAX_LENGTH} chars).`;
+    if (body.cronExpression.trim().length > WAKEUP_LIMITS.cronMaxLength) {
+      errors.cronExpression = `Cron expression is too long (max ${WAKEUP_LIMITS.cronMaxLength} chars).`;
     } else if (body.cronExpression.trim()) {
       cronExpression = body.cronExpression.trim();
     }
@@ -153,24 +150,30 @@ export function validateWakeupInput(raw: unknown): ValidationResult {
     typeof body.customPrompt === "string" && body.customPrompt.trim()
       ? body.customPrompt.trim()
       : DEFAULT_WAKEUP_CONFIG.customPrompt;
-  if (customPrompt.length > PROMPT_MAX_LENGTH) {
-    errors.customPrompt = `Prompt is too long (max ${PROMPT_MAX_LENGTH} chars).`;
+  if (customPrompt.length > WAKEUP_LIMITS.promptMaxLength) {
+    errors.customPrompt = `Prompt is too long (max ${WAKEUP_LIMITS.promptMaxLength} chars).`;
   }
 
   const maxOutputTokens = toInt(
     body.maxOutputTokens,
     DEFAULT_WAKEUP_CONFIG.maxOutputTokens,
   );
-  if (maxOutputTokens < 1 || maxOutputTokens > 8192) {
-    errors.maxOutputTokens = "Max output tokens must be between 1 and 8192.";
+  if (
+    maxOutputTokens < WAKEUP_LIMITS.maxOutputTokens.min ||
+    maxOutputTokens > WAKEUP_LIMITS.maxOutputTokens.max
+  ) {
+    errors.maxOutputTokens = `Max output tokens must be between ${WAKEUP_LIMITS.maxOutputTokens.min} and ${WAKEUP_LIMITS.maxOutputTokens.max}.`;
   }
 
   const cooldownMinutes = toInt(
     body.cooldownMinutes,
     DEFAULT_WAKEUP_CONFIG.cooldownMinutes,
   );
-  if (cooldownMinutes < 0 || cooldownMinutes > 1440) {
-    errors.cooldownMinutes = "Cooldown must be between 0 and 1440 minutes.";
+  if (
+    cooldownMinutes < WAKEUP_LIMITS.cooldownMinutes.min ||
+    cooldownMinutes > WAKEUP_LIMITS.cooldownMinutes.max
+  ) {
+    errors.cooldownMinutes = `Cooldown must be between ${WAKEUP_LIMITS.cooldownMinutes.min} and ${WAKEUP_LIMITS.cooldownMinutes.max} minutes.`;
   }
 
   if (Object.keys(errors).length > 0) {

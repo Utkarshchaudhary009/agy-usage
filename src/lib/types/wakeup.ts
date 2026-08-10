@@ -78,3 +78,25 @@ export const DEFAULT_WAKEUP_CONFIG: WakeupConfigInput = {
   cooldownMinutes: 60,
   wakeOnReset: false,
 };
+
+/**
+ * Authoritative bounds for wakeup config fields. These mirror the CHECK
+ * constraints in `supabase/migrations/009_wakeup_config.sql` and the input
+ * constraints in the UI; keep all three in sync.
+ */
+export const WAKEUP_LIMITS = {
+  intervalHours: { min: 1, max: 168 },
+  maxOutputTokens: { min: 1, max: 8192 },
+  cooldownMinutes: { min: 0, max: 1440 },
+  cronMaxLength: 100,
+  promptMaxLength: 2000,
+  maxSelectedModels: 25,
+  maxAccountIds: 100,
+  maxDailyTimes: 50,
+} as const;
+
+export interface WakeupAccount {
+  id: string;
+  email: string;
+  displayName: string | null;
+}

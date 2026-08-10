@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WakeupConfigForm } from "@/components/wakeup/config-form";
 import { createServerClient } from "@/lib/supabase/server";
-import type { WakeupConfig } from "@/lib/types/wakeup";
+import type { WakeupAccount } from "@/lib/types/wakeup";
 import { getWakeupConfig } from "@/lib/wakeup/config";
 
 function WakeupSkeleton() {
@@ -36,18 +36,13 @@ async function WakeupLoader({ userId }: { userId: string }) {
     console.error("Failed to load accounts:", accountsResult.error);
   }
 
-  const accounts = (accountsResult.data ?? []).map((a) => ({
+  const accounts: WakeupAccount[] = (accountsResult.data ?? []).map((a) => ({
     id: a.id,
     email: a.email,
     displayName: a.display_name,
   }));
 
-  return (
-    <WakeupConfigForm
-      initialConfig={config as WakeupConfig}
-      accounts={accounts}
-    />
-  );
+  return <WakeupConfigForm initialConfig={config} accounts={accounts} />;
 }
 
 export default async function WakeupPage() {
