@@ -19,22 +19,7 @@ const MAX_DAILY_TIMES = 100;
 
 const ALLOWED_MODEL_IDS = new Set(AVAILABLE_WAKEUP_MODELS.map((m) => m.id));
 
-interface ConfigRow {
-  id: string;
-  clerk_user_id: string;
-  enabled: boolean;
-  selected_models: string[];
-  selected_account_ids: string[];
-  schedule_mode: ScheduleMode;
-  interval_hours: number;
-  daily_times: string[];
-  cron_expression: string | null;
-  custom_prompt: string;
-  max_output_tokens: number;
-  cooldown_minutes: number;
-  wake_on_reset: boolean;
-  updated_at: string;
-}
+type ConfigRow = Database["public"]["Tables"]["wakeup_configs"]["Row"];
 
 type ConfigInsert = Database["public"]["Tables"]["wakeup_configs"]["Insert"];
 
@@ -181,34 +166,51 @@ export function validateWakeupConfig(
   }
   const scheduleMode = scheduleModeRaw as ScheduleMode;
 
-  const intervalHours = asPositiveInt(raw.intervalHours, 168);
-  if (intervalHours === undefined) {
-    return {
-      valid: false,
-      error: "`intervalHours` must be an integer between 1 and 168.",
-    };
-  }
-
-  const dailyTimes = asStringArray(raw.dailyTimes);
-  if (!dailyTimes || dailyTimes.length === 0) {
-    return {
-      valid: false,
-      error: "`dailyTimes` must be a non-empty array of HH:MM strings.",
-    };
-  }
-  if (dailyTimes.length > MAX_DAILY_TIMES) {
-    return {
-      valid: false,
-      error: `\`dailyTimes\` must contain at most ${MAX_DAILY_TIMES} entries.`,
-    };
-  }
-  for (const time of dailyTimes) {
-    if (!validateDailyTime(time)) {
+  // Mode-relevant fields are validated only when they apply. Unused fields for
+  // the active mode fall back to a safe value so the stored config stays
+  // complete without rejecting otherwise-valid requests.
+  let intervalHours = DEFAULT_WAKEUP_CONFIG.intervalHours;
+  if (scheduleMode === "interval") {
+    const value = asPositiveInt(raw.intervalHours, 168);
+    if (value === undefined) {
       return {
         valid: false,
-        error: `"${time}" is not a valid 24-hour time (expected HH:MM).`,
+        error: "`intervalHours` must be an integer between 1 and 168.",
       };
     }
+    intervalHours = value;
+  } else if (raw.intervalHours !== undefined) {
+    const value = asPositiveInt(raw.intervalHours, 168);
+    if (value !== undefined) intervalHours = value;
+  }
+
+  let dailyTimes: string[] = [];
+  if (scheduleMode === "daily") {
+    const times = asStringArray(raw.dailyTimes);
+    if (!times || times.length === 0) {
+      return {
+        valid: false,
+        error: "`dailyTimes` must be a non-empty array of HH:MM strings.",
+      };
+    }
+    if (times.length > MAX_DAILY_TIMES) {
+      return {
+        valid: false,
+        error: `\`dailyTimes\` must contain at most ${MAX_DAILY_TIMES} entries.`,
+      };
+    }
+    for (const time of times) {
+      if (!validateDailyTime(time)) {
+        return {
+          valid: false,
+          error: `"${time}" is not a valid 24-hour time (expected HH:MM).`,
+        };
+      }
+    }
+    dailyTimes = times;
+  } else if (raw.dailyTimes !== undefined) {
+    const times = asStringArray(raw.dailyTimes);
+    if (times) dailyTimes = times.filter(validateDailyTime);
   }
 
   let cronExpression: string | null = null;
@@ -299,5 +301,5 @@ export async function loadWakeupConfig(
   }
 
   if (!data) return DEFAULT_WAKEUP_CONFIG;
-  return rowToConfig(data as unknown as ConfigRow);
+  return rowToConfig(data);
 }

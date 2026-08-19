@@ -18,7 +18,7 @@ export function computeNextTrigger(
 
   if (config.scheduleMode === "daily") {
     const candidates = config.dailyTimes
-      .map((time) => parseDailyTime(time))
+      .map((time) => parseDailyTime(time, from))
       .filter((d): d is Date => d !== null)
       .sort((a, b) => a.getTime() - b.getTime());
 
@@ -41,13 +41,13 @@ export function computeNextTrigger(
   return null;
 }
 
-function parseDailyTime(time: string): Date | null {
+function parseDailyTime(time: string, from: Date): Date | null {
   const match = /^(\d{1,2}):(\d{2})$/.exec(time);
   if (!match) return null;
   const hours = Number(match[1]);
   const minutes = Number(match[2]);
   if (hours > 23 || minutes > 59) return null;
-  const result = new Date();
+  const result = new Date(from);
   result.setHours(hours, minutes, 0, 0);
   return result;
 }
