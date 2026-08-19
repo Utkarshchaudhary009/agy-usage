@@ -399,6 +399,38 @@ export interface Database {
         };
         Returns: boolean;
       };
+      save_wakeup_config: {
+        Args: {
+          p_clerk_user_id: string;
+          p_enabled: boolean;
+          p_selected_models: string[];
+          p_selected_account_ids: string[];
+          p_schedule_mode: string;
+          p_interval_hours: number;
+          p_daily_times: string[];
+          p_cron_expression: string | null;
+          p_custom_prompt: string;
+          p_max_output_tokens: number;
+          p_cooldown_minutes: number;
+          p_wake_on_reset: boolean;
+        };
+        Returns: {
+          id: string;
+          clerk_user_id: string;
+          enabled: boolean;
+          selected_models: string[] | null;
+          selected_account_ids: string[] | null;
+          schedule_mode: "interval" | "daily" | "custom";
+          interval_hours: number;
+          daily_times: string[] | null;
+          cron_expression: string | null;
+          custom_prompt: string;
+          max_output_tokens: number;
+          cooldown_minutes: number;
+          wake_on_reset: boolean;
+          updated_at: string;
+        } | null;
+      };
     };
     Enums: {
       [_ in never]: never;

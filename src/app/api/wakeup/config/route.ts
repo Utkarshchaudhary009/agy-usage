@@ -8,8 +8,9 @@ import {
 } from "@/lib/api/errors";
 import { createServerClient } from "@/lib/supabase/server";
 import {
-  configToInsert,
+  type ConfigRow,
   loadWakeupConfig,
+  rowToConfig,
   validateWakeupConfig,
 } from "@/lib/wakeup/config";
 
@@ -42,37 +43,48 @@ export async function PUT(req: NextRequest) {
   }
 
   try {
-    const supabase = await createServerClient();
-
-    // Resolve the account ids the user actually owns so we can reject any
-    // selected account id that does not belong to them.
-    const { data: accounts, error: accountsError } = await supabase
-      .from("google_accounts")
-      .select("id")
-      .eq("clerk_user_id", userId);
-
-    if (accountsError) {
-      return internalError("load your accounts", accountsError);
-    }
-
-    const ownedAccountIds = new Set((accounts ?? []).map((a) => a.id));
-    const result = validateWakeupConfig(body, ownedAccountIds);
+    const result = validateWakeupConfig(body);
     if (!result.valid || !result.config) {
       return validationError(result.error ?? "Invalid configuration.");
     }
+    const config = result.config;
 
-    // Upsert keyed by clerk_user_id (UNIQUE) so repeated saves update the row.
-    const { error: upsertError } = await supabase
-      .from("wakeup_configs")
-      .upsert(configToInsert(result.config, userId), {
-        onConflict: "clerk_user_id",
-      });
+    const supabase = await createServerClient();
 
-    if (upsertError) {
-      return internalError("save wakeup configuration", upsertError);
+    // The account-ownership check and the upsert run inside a single
+    // transaction in `save_wakeup_config`, so a selected account removed
+    // between request validation and the write cannot slip through (TOCTOU).
+    const { data, error: saveError } = await supabase.rpc(
+      "save_wakeup_config",
+      {
+        p_clerk_user_id: userId,
+        p_enabled: config.enabled,
+        p_selected_models: config.selectedModels,
+        p_selected_account_ids: config.selectedAccountIds,
+        p_schedule_mode: config.scheduleMode,
+        p_interval_hours: config.intervalHours,
+        p_daily_times: config.dailyTimes,
+        p_cron_expression: config.cronExpression,
+        p_custom_prompt: config.customPrompt,
+        p_max_output_tokens: config.maxOutputTokens,
+        p_cooldown_minutes: config.cooldownMinutes,
+        p_wake_on_reset: config.wakeOnReset,
+      },
+    );
+
+    if (saveError) {
+      // P0001 is raised by the RPC for authorization/ownership failures.
+      if (saveError.code === "P0001") {
+        return validationError(
+          "One or more selected accounts do not belong to this user.",
+        );
+      }
+      return internalError("save wakeup configuration", saveError);
     }
 
-    return NextResponse.json({ config: result.config });
+    return NextResponse.json({
+      config: rowToConfig(data as ConfigRow),
+    });
   } catch (error) {
     return internalError("save wakeup configuration", error);
   }

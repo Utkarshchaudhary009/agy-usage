@@ -19,7 +19,7 @@ const MAX_DAILY_TIMES = 100;
 
 const ALLOWED_MODEL_IDS = new Set(AVAILABLE_WAKEUP_MODELS.map((m) => m.id));
 
-type ConfigRow = Database["public"]["Tables"]["wakeup_configs"]["Row"];
+export type ConfigRow = Database["public"]["Tables"]["wakeup_configs"]["Row"];
 
 type ConfigInsert = Database["public"]["Tables"]["wakeup_configs"]["Insert"];
 
@@ -89,13 +89,10 @@ function asPositiveInt(value: unknown, max: number): number | undefined {
 
 /**
  * Validates an untrusted PUT body and produces a normalized WakeupConfig.
- * `ownedAccountIds` is the set of account UUIDs that the requesting user owns;
- * any selected account id that is not in this set is rejected.
+ * Structural validation only — account ownership is enforced atomically inside
+ * the `save_wakeup_config` RPC so the check cannot race with account removal.
  */
-export function validateWakeupConfig(
-  input: unknown,
-  ownedAccountIds: Set<string>,
-): ConfigValidationResult {
+export function validateWakeupConfig(input: unknown): ConfigValidationResult {
   if (typeof input !== "object" || input === null) {
     return { valid: false, error: "Invalid request body." };
   }
@@ -145,14 +142,6 @@ export function validateWakeupConfig(
     };
   }
   const uniqueAccountIds = [...new Set(selectedAccountIds)];
-  for (const id of uniqueAccountIds) {
-    if (!ownedAccountIds.has(id)) {
-      return {
-        valid: false,
-        error: "One or more selected accounts do not belong to this user.",
-      };
-    }
-  }
 
   const scheduleModeRaw = asString(raw.scheduleMode);
   if (
