@@ -3,6 +3,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/types/database";
 import {
+  AVAILABLE_WAKEUP_MODELS,
   DEFAULT_WAKEUP_CONFIG,
   SCHEDULE_MODES,
   type ScheduleMode,
@@ -10,6 +11,13 @@ import {
   validateDailyTime,
   type WakeupConfig,
 } from "@/lib/types/wakeup";
+
+// Defensive caps to prevent resource exhaustion from an oversized request body.
+const MAX_MODELS = 50;
+const MAX_ACCOUNTS = 200;
+const MAX_DAILY_TIMES = 100;
+
+const ALLOWED_MODEL_IDS = new Set(AVAILABLE_WAKEUP_MODELS.map((m) => m.id));
 
 interface ConfigRow {
   id: string;
@@ -120,6 +128,23 @@ export function validateWakeupConfig(
       error: "`selectedModels` must be an array of strings.",
     };
   }
+  if (selectedModels.length > MAX_MODELS) {
+    return {
+      valid: false,
+      error: `\`selectedModels\` must contain at most ${MAX_MODELS} entries.`,
+    };
+  }
+  // Only accept known model identifiers; reject arbitrary strings that could be
+  // forwarded to downstream model APIs.
+  const uniqueModels = [...new Set(selectedModels)];
+  for (const model of uniqueModels) {
+    if (!ALLOWED_MODEL_IDS.has(model)) {
+      return {
+        valid: false,
+        error: `"${model}" is not a supported model.`,
+      };
+    }
+  }
 
   const selectedAccountIds = asStringArray(raw.selectedAccountIds);
   if (!selectedAccountIds) {
@@ -128,7 +153,14 @@ export function validateWakeupConfig(
       error: "`selectedAccountIds` must be an array of strings.",
     };
   }
-  for (const id of selectedAccountIds) {
+  if (selectedAccountIds.length > MAX_ACCOUNTS) {
+    return {
+      valid: false,
+      error: `\`selectedAccountIds\` must contain at most ${MAX_ACCOUNTS} entries.`,
+    };
+  }
+  const uniqueAccountIds = [...new Set(selectedAccountIds)];
+  for (const id of uniqueAccountIds) {
     if (!ownedAccountIds.has(id)) {
       return {
         valid: false,
@@ -162,6 +194,12 @@ export function validateWakeupConfig(
     return {
       valid: false,
       error: "`dailyTimes` must be a non-empty array of HH:MM strings.",
+    };
+  }
+  if (dailyTimes.length > MAX_DAILY_TIMES) {
+    return {
+      valid: false,
+      error: `\`dailyTimes\` must contain at most ${MAX_DAILY_TIMES} entries.`,
     };
   }
   for (const time of dailyTimes) {
@@ -228,8 +266,8 @@ export function validateWakeupConfig(
     valid: true,
     config: {
       enabled,
-      selectedModels,
-      selectedAccountIds,
+      selectedModels: uniqueModels,
+      selectedAccountIds: uniqueAccountIds,
       scheduleMode,
       intervalHours,
       dailyTimes,

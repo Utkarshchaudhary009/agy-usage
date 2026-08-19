@@ -50,53 +50,58 @@ const CRON_FIELD_RANGE: { min: number; max: number }[] = [
   { min: 0, max: 7 }, // day of week (0 and 7 both = Sunday)
 ];
 
-// Steps allowed: `*/15`, `1-5/2`, `5/2`.
-const STEP_RE = /^(\*|\d+(?:-\d+)?)\/(\d+)$/;
+const MAX_CRON_LENGTH = 100;
+const MAX_CRON_FIELD_LENGTH = 20;
+
+/**
+ * Validates a single cron atom: "*", a number, a range "a-b", or any of those
+ * optionally followed by a "/step". Rejects malformed input such as multiple
+ * dashes (`1-2-3`), a leading dash (`-5`), empty parts, non-integer values, or
+ * out-of-range numbers. This prevents storing cron data that a downstream
+ * scheduler cannot safely interpret.
+ */
+function validateCronAtom(
+  atom: string,
+  range: { min: number; max: number },
+): boolean {
+  if (atom === "*") return true;
+
+  let base = atom;
+  if (atom.includes("/")) {
+    const parts = atom.split("/");
+    if (parts.length !== 2) return false;
+    base = parts[0];
+    const step = Number(parts[1]);
+    if (!Number.isInteger(step) || step < 1) return false;
+  }
+
+  if (base === "*") return true;
+
+  if (base.includes("-")) {
+    const bounds = base.split("-");
+    if (bounds.length !== 2) return false;
+    const lo = Number(bounds[0]);
+    const hi = Number(bounds[1]);
+    return (
+      Number.isInteger(lo) &&
+      Number.isInteger(hi) &&
+      lo >= range.min &&
+      hi <= range.max &&
+      lo <= hi
+    );
+  }
+
+  const value = Number(base);
+  return Number.isInteger(value) && value >= range.min && value <= range.max;
+}
 
 function validateCronField(
   field: string,
   range: { min: number; max: number },
 ): boolean {
-  if (field === "*") return true;
-
-  if (field.includes("/")) {
-    const match = field.match(STEP_RE);
-    if (!match) return false;
-    const base = match[1];
-    const step = Number(match[2]);
-    if (step < 1) return false;
-    if (base === "*") return true;
-    // base is either a number or a range like 1-5
-    const [loStr, hiStr] = base.split("-");
-    const lo = Number(loStr);
-    const hi = hiStr ? Number(hiStr) : lo;
-    return (
-      Number.isInteger(lo) && lo >= range.min && hi <= range.max && lo <= hi
-    );
-  }
-
-  for (const part of field.split(",")) {
-    if (part.includes("-")) {
-      const [loStr, hiStr] = part.split("-");
-      const lo = Number(loStr);
-      const hi = Number(hiStr);
-      if (
-        !Number.isInteger(lo) ||
-        !Number.isInteger(hi) ||
-        lo < range.min ||
-        hi > range.max ||
-        lo > hi
-      ) {
-        return false;
-      }
-    } else {
-      const value = Number(part);
-      if (!Number.isInteger(value) || value < range.min || value > range.max) {
-        return false;
-      }
-    }
-  }
-  return true;
+  if (field.length === 0 || field.length > MAX_CRON_FIELD_LENGTH) return false;
+  // A field is a comma-separated list of atoms.
+  return field.split(",").every((atom) => validateCronAtom(atom, range));
 }
 
 /**
@@ -106,9 +111,20 @@ function validateCronField(
 export function validateCronExpression(
   expression: string,
 ): CronValidationResult {
+  if (typeof expression !== "string") {
+    return { valid: false, error: "Cron expression must be a string." };
+  }
+
   const trimmed = expression.trim();
   if (!trimmed) {
     return { valid: false, error: "Cron expression is required." };
+  }
+
+  if (trimmed.length > MAX_CRON_LENGTH) {
+    return {
+      valid: false,
+      error: `Cron expression must be at most ${MAX_CRON_LENGTH} characters.`,
+    };
   }
 
   const fields = trimmed.split(/\s+/);
