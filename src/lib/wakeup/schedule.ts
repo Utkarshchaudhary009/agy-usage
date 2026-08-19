@@ -1,4 +1,4 @@
-import type { WakeupConfig } from "@/lib/types/wakeup";
+import { validateDailyTime, type WakeupConfig } from "@/lib/types/wakeup";
 
 /**
  * Computes the next scheduled trigger time for a config, or `null` when it
@@ -42,11 +42,8 @@ export function computeNextTrigger(
 }
 
 function parseDailyTime(time: string, from: Date): Date | null {
-  const match = /^(\d{1,2}):(\d{2})$/.exec(time);
-  if (!match) return null;
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  if (hours > 23 || minutes > 59) return null;
+  if (!validateDailyTime(time)) return null;
+  const [hours, minutes] = time.split(":").map(Number);
   const result = new Date(from);
   result.setHours(hours, minutes, 0, 0);
   return result;

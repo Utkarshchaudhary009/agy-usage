@@ -1,5 +1,11 @@
 import { auth } from "@clerk/nextjs/server";
 import { type NextRequest, NextResponse } from "next/server";
+import {
+  badRequest,
+  internalError,
+  unauthorized,
+  validationError,
+} from "@/lib/api/errors";
 import { createServerClient } from "@/lib/supabase/server";
 import {
   configToInsert,
@@ -10,14 +16,7 @@ import {
 export async function GET() {
   const { userId } = await auth();
   if (!userId) {
-    return NextResponse.json(
-      {
-        error: "Unauthorized",
-        code: "UNAUTHORIZED",
-        message: "You must be logged in to view wakeup config.",
-      },
-      { status: 401 },
-    );
+    return unauthorized("You must be logged in to view wakeup config.");
   }
 
   try {
@@ -25,43 +24,21 @@ export async function GET() {
     const config = await loadWakeupConfig(supabase, userId);
     return NextResponse.json({ config });
   } catch (error) {
-    console.error("Wakeup config GET error:", error);
-    return NextResponse.json(
-      {
-        error: "Internal Server Error",
-        code: "INTERNAL_ERROR",
-        message: "Failed to load wakeup configuration.",
-      },
-      { status: 500 },
-    );
+    return internalError("load wakeup configuration", error);
   }
 }
 
 export async function PUT(req: NextRequest) {
   const { userId } = await auth();
   if (!userId) {
-    return NextResponse.json(
-      {
-        error: "Unauthorized",
-        code: "UNAUTHORIZED",
-        message: "You must be logged in to update wakeup config.",
-      },
-      { status: 401 },
-    );
+    return unauthorized("You must be logged in to update wakeup config.");
   }
 
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json(
-      {
-        error: "Bad Request",
-        code: "INVALID_JSON",
-        message: "Request body must be valid JSON.",
-      },
-      { status: 400 },
-    );
+    return badRequest("INVALID_JSON", "Request body must be valid JSON.");
   }
 
   try {
@@ -75,31 +52,13 @@ export async function PUT(req: NextRequest) {
       .eq("clerk_user_id", userId);
 
     if (accountsError) {
-      console.error(
-        "Failed to load accounts for config update:",
-        accountsError,
-      );
-      return NextResponse.json(
-        {
-          error: "Internal Server Error",
-          code: "INTERNAL_ERROR",
-          message: "Failed to load your accounts.",
-        },
-        { status: 500 },
-      );
+      return internalError("load your accounts", accountsError);
     }
 
     const ownedAccountIds = new Set((accounts ?? []).map((a) => a.id));
     const result = validateWakeupConfig(body, ownedAccountIds);
     if (!result.valid || !result.config) {
-      return NextResponse.json(
-        {
-          error: "Validation Error",
-          code: "VALIDATION_ERROR",
-          message: result.error ?? "Invalid configuration.",
-        },
-        { status: 400 },
-      );
+      return validationError(result.error ?? "Invalid configuration.");
     }
 
     // Upsert keyed by clerk_user_id (UNIQUE) so repeated saves update the row.
@@ -110,27 +69,11 @@ export async function PUT(req: NextRequest) {
       });
 
     if (upsertError) {
-      console.error("Failed to save wakeup config:", upsertError);
-      return NextResponse.json(
-        {
-          error: "Internal Server Error",
-          code: "INTERNAL_ERROR",
-          message: "Failed to save wakeup configuration.",
-        },
-        { status: 500 },
-      );
+      return internalError("save wakeup configuration", upsertError);
     }
 
     return NextResponse.json({ config: result.config });
   } catch (error) {
-    console.error("Wakeup config PUT error:", error);
-    return NextResponse.json(
-      {
-        error: "Internal Server Error",
-        code: "INTERNAL_ERROR",
-        message: "Failed to save wakeup configuration.",
-      },
-      { status: 500 },
-    );
+    return internalError("save wakeup configuration", error);
   }
 }

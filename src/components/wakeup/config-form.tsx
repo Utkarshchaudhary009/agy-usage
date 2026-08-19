@@ -114,7 +114,7 @@ export function ConfigForm({ initialConfig, accounts }: ConfigFormProps) {
           >
             <Clock className="size-4 text-muted-foreground" />
             <span className="text-muted-foreground">Next trigger:</span>
-            <span className="font-medium">
+            <span className="font-medium" suppressHydrationWarning>
               {config.enabled ? formatNextTrigger(nextTrigger) : "—"}
             </span>
             <span className="text-muted-foreground">

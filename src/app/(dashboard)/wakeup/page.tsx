@@ -7,39 +7,19 @@ import {
   type LinkedAccountOption,
 } from "@/components/wakeup/config-form";
 import { createServerClient } from "@/lib/supabase/server";
-import { DEFAULT_WAKEUP_CONFIG, type WakeupConfig } from "@/lib/types/wakeup";
+import { loadWakeupConfig } from "@/lib/wakeup/config";
 
 async function WakeupLoader({ userId }: { userId: string }) {
   const supabase = await createServerClient();
 
-  const [{ data: configRow }, { data: accounts }] = await Promise.all([
-    supabase
-      .from("wakeup_configs")
-      .select("*")
-      .eq("clerk_user_id", userId)
-      .maybeSingle(),
+  const [config, { data: accounts }] = await Promise.all([
+    loadWakeupConfig(supabase, userId),
     supabase
       .from("google_accounts")
       .select("id, email, display_name")
       .eq("clerk_user_id", userId)
       .order("added_at", { ascending: true }),
   ]);
-
-  const config: WakeupConfig = configRow
-    ? {
-        enabled: configRow.enabled,
-        selectedModels: configRow.selected_models ?? [],
-        selectedAccountIds: configRow.selected_account_ids ?? [],
-        scheduleMode: configRow.schedule_mode,
-        intervalHours: configRow.interval_hours,
-        dailyTimes: configRow.daily_times ?? [],
-        cronExpression: configRow.cron_expression,
-        customPrompt: configRow.custom_prompt,
-        maxOutputTokens: configRow.max_output_tokens,
-        cooldownMinutes: configRow.cooldown_minutes,
-        wakeOnReset: configRow.wake_on_reset,
-      }
-    : DEFAULT_WAKEUP_CONFIG;
 
   const accountOptions: LinkedAccountOption[] = (accounts ?? []).map((a) => ({
     id: a.id,
