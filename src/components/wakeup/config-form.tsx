@@ -1,7 +1,7 @@
 "use client";
 
 import { Clock, Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,6 +44,10 @@ function formatNextTrigger(date: Date | null): string {
 export function ConfigForm({ initialConfig, accounts }: ConfigFormProps) {
   const [config, setConfig] = useState<WakeupConfig>(initialConfig);
   const [isSaving, setIsSaving] = useState(false);
+  // The "next trigger" preview is derived from the current time, so it is only
+  // computed after mount to avoid an SSR/client hydration mismatch.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const update = (patch: Partial<WakeupConfig>) =>
     setConfig((prev) => ({ ...prev, ...patch }));
@@ -57,7 +61,8 @@ export function ConfigForm({ initialConfig, accounts }: ConfigFormProps) {
     }));
   };
 
-  const nextTrigger = config.enabled ? computeNextTrigger(config) : null;
+  const nextTrigger =
+    mounted && config.enabled ? computeNextTrigger(config) : null;
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -114,7 +119,7 @@ export function ConfigForm({ initialConfig, accounts }: ConfigFormProps) {
           >
             <Clock className="size-4 text-muted-foreground" />
             <span className="text-muted-foreground">Next trigger:</span>
-            <span className="font-medium" suppressHydrationWarning>
+            <span className="font-medium">
               {config.enabled ? formatNextTrigger(nextTrigger) : "—"}
             </span>
             <span className="text-muted-foreground">

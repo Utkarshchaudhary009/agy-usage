@@ -1,5 +1,4 @@
 export type ScheduleMode = "interval" | "daily" | "custom";
-export type TriggerSource = "manual" | "scheduled" | "quota_reset";
 
 export interface WakeupConfig {
   enabled: boolean;

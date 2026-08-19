@@ -21,8 +21,6 @@ const ALLOWED_MODEL_IDS = new Set(AVAILABLE_WAKEUP_MODELS.map((m) => m.id));
 
 export type ConfigRow = Database["public"]["Tables"]["wakeup_configs"]["Row"];
 
-type ConfigInsert = Database["public"]["Tables"]["wakeup_configs"]["Insert"];
-
 export function rowToConfig(row: ConfigRow): WakeupConfig {
   return {
     enabled: row.enabled,
@@ -36,26 +34,6 @@ export function rowToConfig(row: ConfigRow): WakeupConfig {
     maxOutputTokens: row.max_output_tokens,
     cooldownMinutes: row.cooldown_minutes,
     wakeOnReset: row.wake_on_reset,
-  };
-}
-
-export function configToInsert(
-  config: WakeupConfig,
-  clerkUserId: string,
-): ConfigInsert {
-  return {
-    clerk_user_id: clerkUserId,
-    enabled: config.enabled,
-    selected_models: config.selectedModels,
-    selected_account_ids: config.selectedAccountIds,
-    schedule_mode: config.scheduleMode,
-    interval_hours: config.intervalHours,
-    daily_times: config.dailyTimes,
-    cron_expression: config.cronExpression,
-    custom_prompt: config.customPrompt,
-    max_output_tokens: config.maxOutputTokens,
-    cooldown_minutes: config.cooldownMinutes,
-    wake_on_reset: config.wakeOnReset,
   };
 }
 

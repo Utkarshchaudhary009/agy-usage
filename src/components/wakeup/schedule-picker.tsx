@@ -89,8 +89,18 @@ export function SchedulePicker({
                   value={time}
                   disabled={disabled}
                   onChange={(e) => {
+                    const value = e.target.value;
+                    // Keep times unique so each row has a stable, collision-free key.
+                    if (
+                      value &&
+                      config.dailyTimes.some(
+                        (t, i) => i !== index && t === value,
+                      )
+                    ) {
+                      return;
+                    }
                     const next = [...config.dailyTimes];
-                    next[index] = e.target.value;
+                    next[index] = value;
                     onChange({ dailyTimes: next });
                   }}
                   className="bg-transparent text-sm focus:outline-none"
@@ -117,9 +127,12 @@ export function SchedulePicker({
               variant="outline"
               size="sm"
               disabled={disabled}
-              onClick={() =>
-                onChange({ dailyTimes: [...config.dailyTimes, "12:00"] })
-              }
+              onClick={() => {
+                const added = "12:00";
+                // Avoid duplicate times so each row keeps a unique key.
+                if (config.dailyTimes.includes(added)) return;
+                onChange({ dailyTimes: [...config.dailyTimes, added] });
+              }}
             >
               <Plus className="size-4" />
               Add time
