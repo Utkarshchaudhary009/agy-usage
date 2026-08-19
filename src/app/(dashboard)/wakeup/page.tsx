@@ -12,7 +12,7 @@ import { loadWakeupConfig } from "@/lib/wakeup/config";
 async function WakeupLoader({ userId }: { userId: string }) {
   const supabase = await createServerClient();
 
-  const [config, { data: accounts }] = await Promise.all([
+  const [config, accountsResult] = await Promise.all([
     loadWakeupConfig(supabase, userId),
     supabase
       .from("google_accounts")
@@ -21,11 +21,22 @@ async function WakeupLoader({ userId }: { userId: string }) {
       .order("added_at", { ascending: true }),
   ]);
 
-  const accountOptions: LinkedAccountOption[] = (accounts ?? []).map((a) => ({
-    id: a.id,
-    email: a.email,
-    displayName: a.display_name,
-  }));
+  // A failed accounts query must not be silently swallowed — surfacing the
+  // failure is safer than letting the user save with an incomplete account
+  // list.
+  if (accountsResult.error) {
+    throw new Error(
+      `Failed to load linked accounts: ${accountsResult.error.message}`,
+    );
+  }
+
+  const accountOptions: LinkedAccountOption[] = (accountsResult.data ?? []).map(
+    (a) => ({
+      id: a.id,
+      email: a.email,
+      displayName: a.display_name,
+    }),
+  );
 
   return <ConfigForm initialConfig={config} accounts={accountOptions} />;
 }

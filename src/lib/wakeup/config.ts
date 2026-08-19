@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/types/database";
 import {
   AVAILABLE_WAKEUP_MODELS,
+  CUSTOM_PROMPT_MAX_LENGTH,
   DEFAULT_WAKEUP_CONFIG,
   SCHEDULE_MODES,
   type ScheduleMode,
@@ -16,6 +17,12 @@ import {
 const MAX_MODELS = 50;
 const MAX_ACCOUNTS = 200;
 const MAX_DAILY_TIMES = 100;
+
+// Account ids are stored as UUID[] in the database. Reject anything that is not
+// a canonical UUID up front so a malformed id cannot reach the `save_wakeup_config`
+// RPC (which would otherwise throw a database cast error and surface as a 500).
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const ALLOWED_MODEL_IDS = new Set(AVAILABLE_WAKEUP_MODELS.map((m) => m.id));
 
@@ -120,6 +127,14 @@ export function validateWakeupConfig(input: unknown): ConfigValidationResult {
     };
   }
   const uniqueAccountIds = [...new Set(selectedAccountIds)];
+  for (const id of uniqueAccountIds) {
+    if (!UUID_RE.test(id)) {
+      return {
+        valid: false,
+        error: `"${id}" is not a valid account id.`,
+      };
+    }
+  }
 
   const scheduleModeRaw = asString(raw.scheduleMode);
   if (
@@ -177,7 +192,11 @@ export function validateWakeupConfig(input: unknown): ConfigValidationResult {
     dailyTimes = times;
   } else if (raw.dailyTimes !== undefined) {
     const times = asStringArray(raw.dailyTimes);
-    if (times) dailyTimes = times.filter(validateDailyTime);
+    // Still enforce the cap + format in non-daily modes so a client cannot
+    // persist an unbounded or malformed array into the stored config.
+    if (times) {
+      dailyTimes = times.filter(validateDailyTime).slice(0, MAX_DAILY_TIMES);
+    }
   }
 
   let cronExpression: string | null = null;
@@ -203,10 +222,10 @@ export function validateWakeupConfig(input: unknown): ConfigValidationResult {
       error: "`customPrompt` must be a non-empty string.",
     };
   }
-  if (customPrompt.length > 2000) {
+  if (customPrompt.length > CUSTOM_PROMPT_MAX_LENGTH) {
     return {
       valid: false,
-      error: "`customPrompt` must be at most 2000 characters.",
+      error: `\`customPrompt\` must be at most ${CUSTOM_PROMPT_MAX_LENGTH} characters.`,
     };
   }
 

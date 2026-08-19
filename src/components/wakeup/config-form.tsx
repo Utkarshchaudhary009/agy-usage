@@ -14,7 +14,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import type { WakeupConfig } from "@/lib/types/wakeup";
-import { cn } from "@/lib/utils";
+import { CUSTOM_PROMPT_MAX_LENGTH } from "@/lib/types/wakeup";
+import { clampInt, cn } from "@/lib/utils";
 import { computeNextTrigger, describeSchedule } from "@/lib/wakeup/schedule";
 import { ModelSelector } from "./model-selector";
 import { SchedulePicker } from "./schedule-picker";
@@ -79,7 +80,11 @@ export function ConfigForm({ initialConfig, accounts }: ConfigFormProps) {
         return;
       }
 
-      setConfig(data.config as WakeupConfig);
+      // Only apply the server's snapshot if no edits happened while the request
+      // was in flight; otherwise we would silently discard the user's changes.
+      setConfig((current) =>
+        current === config ? (data.config as WakeupConfig) : current,
+      );
       toast.success("Wakeup configuration saved.");
     } catch {
       toast.error("Network error. Please try again.");
@@ -178,6 +183,7 @@ export function ConfigForm({ initialConfig, accounts }: ConfigFormProps) {
                       type="checkbox"
                       className="size-4 rounded border-input accent-primary"
                       checked={checked}
+                      disabled={!config.enabled}
                       onChange={() => toggleAccount(account.id)}
                     />
                     <span className="font-medium">
@@ -220,6 +226,7 @@ export function ConfigForm({ initialConfig, accounts }: ConfigFormProps) {
             <Input
               id="custom-prompt"
               value={config.customPrompt}
+              maxLength={CUSTOM_PROMPT_MAX_LENGTH}
               disabled={!config.enabled}
               onChange={(e) => update({ customPrompt: e.target.value })}
             />
@@ -241,7 +248,14 @@ export function ConfigForm({ initialConfig, accounts }: ConfigFormProps) {
                 value={config.maxOutputTokens}
                 disabled={!config.enabled}
                 onChange={(e) =>
-                  update({ maxOutputTokens: Number(e.target.value) })
+                  update({
+                    maxOutputTokens: clampInt(
+                      e.target.value,
+                      1,
+                      4096,
+                      config.maxOutputTokens,
+                    ),
+                  })
                 }
               />
             </div>
@@ -257,7 +271,14 @@ export function ConfigForm({ initialConfig, accounts }: ConfigFormProps) {
                 value={config.cooldownMinutes}
                 disabled={!config.enabled}
                 onChange={(e) =>
-                  update({ cooldownMinutes: Number(e.target.value) })
+                  update({
+                    cooldownMinutes: clampInt(
+                      e.target.value,
+                      1,
+                      1440,
+                      config.cooldownMinutes,
+                    ),
+                  })
                 }
               />
             </div>

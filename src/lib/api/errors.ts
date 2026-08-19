@@ -46,10 +46,11 @@ export function internalError(action: string, cause?: unknown) {
   );
 }
 
-// PGRST116 = no rows matched, either because the row does not exist or RLS
-// filtered it out. Both cases are a genuine not-found to the caller.
+// PGRST116 = ".single()" got zero or multiple rows. A genuine not-found is the
+// zero-rows case; multiple rows is a data-integrity problem that must NOT be
+// masked as not-found, so we require the error details to report "0 rows".
 export function isRowNotFound(
   error: PostgrestError | null | undefined,
 ): boolean {
-  return error?.code === "PGRST116";
+  return error?.code === "PGRST116" && (error.details ?? "").includes("0 rows");
 }

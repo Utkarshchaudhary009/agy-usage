@@ -9,7 +9,7 @@ import {
   validateCronExpression,
   type WakeupConfig,
 } from "@/lib/types/wakeup";
-import { cn } from "@/lib/utils";
+import { clampInt, cn } from "@/lib/utils";
 
 interface SchedulePickerProps {
   config: WakeupConfig;
@@ -82,18 +82,25 @@ export function SchedulePicker({
             id="interval-hours"
             type="range"
             min={1}
-            max={24}
+            max={168}
             step={1}
             value={config.intervalHours}
             disabled={disabled}
             onChange={(e) =>
-              onChange({ intervalHours: Number(e.target.value) })
+              onChange({
+                intervalHours: clampInt(
+                  e.target.value,
+                  1,
+                  168,
+                  config.intervalHours,
+                ),
+              })
             }
             className="w-full accent-primary"
           />
           <div className="flex justify-between text-xs text-muted-foreground">
             <span>1h</span>
-            <span>24h</span>
+            <span>168h</span>
           </div>
         </div>
       )}
@@ -153,10 +160,24 @@ export function SchedulePicker({
               size="sm"
               disabled={disabled}
               onClick={() => {
-                const added = "12:00";
-                // Avoid duplicate times so each row stays distinct.
-                if (config.dailyTimes.includes(added)) return;
-                onChange({ dailyTimes: [...config.dailyTimes, added] });
+                const used = new Set(config.dailyTimes);
+                // Pick the next unused HH:MM (30-minute granularity) so the
+                // button always adds a distinct row instead of silently doing
+                // nothing when the seeded default is already present.
+                let next = "00:00";
+                outer: for (let h = 0; h < 24; h += 1) {
+                  for (let m = 0; m < 60; m += 30) {
+                    const candidate = `${String(h).padStart(2, "0")}:${String(
+                      m,
+                    ).padStart(2, "0")}`;
+                    if (!used.has(candidate)) {
+                      next = candidate;
+                      break outer;
+                    }
+                  }
+                }
+                if (used.has(next)) return;
+                onChange({ dailyTimes: [...config.dailyTimes, next] });
               }}
             >
               <Plus className="size-4" />

@@ -41,6 +41,10 @@ export interface CronValidationResult {
   error?: string;
 }
 
+// Shared with the client so the prompt input can enforce the same limit the
+// server validates against.
+export const CUSTOM_PROMPT_MAX_LENGTH = 2000;
+
 const CRON_FIELD_RANGE: { min: number; max: number }[] = [
   { min: 0, max: 59 }, // minute
   { min: 0, max: 23 }, // hour
@@ -51,6 +55,17 @@ const CRON_FIELD_RANGE: { min: number; max: number }[] = [
 
 const MAX_CRON_LENGTH = 100;
 const MAX_CRON_FIELD_LENGTH = 20;
+
+// Only canonical decimal integers are accepted. `Number()` coerces values like
+// "" (-> 0), "0x10" (-> 16), "+5", and "1e2" into numbers, so we reject
+// anything that is not a strict digit string before parsing.
+const CRON_INT_RE = /^\d+$/;
+
+function parseCronInt(token: string): number | null {
+  if (!CRON_INT_RE.test(token)) return null;
+  const value = Number(token);
+  return Number.isInteger(value) ? value : null;
+}
 
 /**
  * Validates a single cron atom: "*", a number, a range "a-b", or any of those
@@ -70,8 +85,8 @@ function validateCronAtom(
     const parts = atom.split("/");
     if (parts.length !== 2) return false;
     base = parts[0];
-    const step = Number(parts[1]);
-    if (!Number.isInteger(step) || step < 1) return false;
+    const step = parseCronInt(parts[1]);
+    if (step === null || step < 1) return false;
   }
 
   if (base === "*") return true;
@@ -79,19 +94,14 @@ function validateCronAtom(
   if (base.includes("-")) {
     const bounds = base.split("-");
     if (bounds.length !== 2) return false;
-    const lo = Number(bounds[0]);
-    const hi = Number(bounds[1]);
-    return (
-      Number.isInteger(lo) &&
-      Number.isInteger(hi) &&
-      lo >= range.min &&
-      hi <= range.max &&
-      lo <= hi
-    );
+    const lo = parseCronInt(bounds[0]);
+    const hi = parseCronInt(bounds[1]);
+    if (lo === null || hi === null) return false;
+    return lo >= range.min && hi <= range.max && lo <= hi;
   }
 
-  const value = Number(base);
-  return Number.isInteger(value) && value >= range.min && value <= range.max;
+  const value = parseCronInt(base);
+  return value !== null && value >= range.min && value <= range.max;
 }
 
 function validateCronField(
@@ -114,16 +124,18 @@ export function validateCronExpression(
     return { valid: false, error: "Cron expression must be a string." };
   }
 
-  const trimmed = expression.trim();
-  if (!trimmed) {
-    return { valid: false, error: "Cron expression is required." };
-  }
-
-  if (trimmed.length > MAX_CRON_LENGTH) {
+  // Check the raw length first: trimming (below) could otherwise hide a value
+  // that is only over the limit because of surrounding whitespace.
+  if (expression.length > MAX_CRON_LENGTH) {
     return {
       valid: false,
       error: `Cron expression must be at most ${MAX_CRON_LENGTH} characters.`,
     };
+  }
+
+  const trimmed = expression.trim();
+  if (!trimmed) {
+    return { valid: false, error: "Cron expression is required." };
   }
 
   const fields = trimmed.split(/\s+/);

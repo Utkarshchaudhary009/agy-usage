@@ -73,13 +73,23 @@ export async function PUT(req: NextRequest) {
     );
 
     if (saveError) {
-      // P0001 is raised by the RPC for authorization/ownership failures.
+      // P0001 = the caller is not authorized to modify this config row.
       if (saveError.code === "P0001") {
+        return unauthorized(
+          "You are not authorized to modify this configuration.",
+        );
+      }
+      // OWNAC = a selected account does not belong to this user.
+      if (saveError.code === "OWNAC") {
         return validationError(
           "One or more selected accounts do not belong to this user.",
         );
       }
       return internalError("save wakeup configuration", saveError);
+    }
+
+    if (!data) {
+      return internalError("save wakeup configuration");
     }
 
     return NextResponse.json({
