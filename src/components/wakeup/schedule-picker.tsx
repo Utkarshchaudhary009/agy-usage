@@ -1,6 +1,7 @@
 "use client";
 
 import { Plus, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -28,6 +29,28 @@ export function SchedulePicker({
   disabled,
 }: SchedulePickerProps) {
   const setMode = (mode: ScheduleMode) => onChange({ scheduleMode: mode });
+
+  // Stable, per-row identities so editing a time in place never remounts its
+  // <input> (which would drop focus). Seeded deterministically from the initial
+  // length to stay hydration-safe, then extended on add.
+  const [timeIds, setTimeIds] = useState(() =>
+    config.dailyTimes.map((_, i) => `time-${i}`),
+  );
+  const nextTimeId = useRef(config.dailyTimes.length);
+  useEffect(() => {
+    setTimeIds((prev) => {
+      if (prev.length === config.dailyTimes.length) return prev;
+      if (prev.length < config.dailyTimes.length) {
+        const added = config.dailyTimes.length - prev.length;
+        const newIds = Array.from(
+          { length: added },
+          () => `time-${nextTimeId.current++}`,
+        );
+        return [...prev, ...newIds];
+      }
+      return prev.slice(0, config.dailyTimes.length);
+    });
+  }, [config.dailyTimes.length]);
 
   return (
     <div className="space-y-4">
@@ -81,16 +104,18 @@ export function SchedulePicker({
           <div className="flex flex-wrap gap-2">
             {config.dailyTimes.map((time, index) => (
               <div
-                key={time}
+                key={timeIds[index]}
                 className="flex items-center gap-1 rounded-md border border-input bg-background p-1 pr-2"
               >
                 <input
                   type="time"
                   value={time}
+                  aria-label={`Wake-up time ${index + 1}`}
                   disabled={disabled}
                   onChange={(e) => {
                     const value = e.target.value;
-                    // Keep times unique so each row has a stable, collision-free key.
+                    // Keep times unique; the row key is its stable index, not the
+                    // value, so editing in place never remounts the input.
                     if (
                       value &&
                       config.dailyTimes.some(
@@ -129,7 +154,7 @@ export function SchedulePicker({
               disabled={disabled}
               onClick={() => {
                 const added = "12:00";
-                // Avoid duplicate times so each row keeps a unique key.
+                // Avoid duplicate times so each row stays distinct.
                 if (config.dailyTimes.includes(added)) return;
                 onChange({ dailyTimes: [...config.dailyTimes, added] });
               }}
