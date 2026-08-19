@@ -32,9 +32,6 @@ CREATE TABLE public.wakeup_logs (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_wakeup_configs_user
-  ON public.wakeup_configs (clerk_user_id);
-
 CREATE INDEX idx_wakeup_logs_time
   ON public.wakeup_logs (clerk_user_id, created_at DESC);
 
@@ -55,19 +52,14 @@ CREATE TRIGGER trg_wakeup_configs_touch_updated_at
 ALTER TABLE public.wakeup_configs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wakeup_logs ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users manage their own wakeup config" ON public.wakeup_configs
-  FOR ALL TO authenticated USING (requesting_user_id() = clerk_user_id)
-  WITH CHECK (requesting_user_id() = clerk_user_id);
-
-CREATE POLICY "Users can read their own wakeup logs" ON public.wakeup_logs
+-- Config writes must go through the `save_wakeup_config` SECURITY DEFINER RPC so
+-- the account-ownership check stays atomic (migration 010). A direct client
+-- UPDATE/INSERT here would bypass that check, so the client gets SELECT only.
+CREATE POLICY "Users can read their own wakeup config" ON public.wakeup_configs
   FOR SELECT TO authenticated USING (requesting_user_id() = clerk_user_id);
 
-CREATE POLICY "Users can insert their own wakeup logs" ON public.wakeup_logs
-  FOR INSERT TO authenticated WITH CHECK (requesting_user_id() = clerk_user_id);
-
--- Logs are immutable to the user after creation (Inngest writes them).
-CREATE POLICY "Users cannot modify their wakeup logs" ON public.wakeup_logs
-  FOR UPDATE TO authenticated USING (false);
-
-CREATE POLICY "Users cannot delete their wakeup logs" ON public.wakeup_logs
-  FOR DELETE TO authenticated USING (false);
+-- Logs are written only by the backend (Inngest) using the service_role, which
+-- bypasses RLS. The client therefore gets no write policies — a direct INSERT
+-- could otherwise attribute a row to an account it does not own.
+CREATE POLICY "Users can read their own wakeup logs" ON public.wakeup_logs
+  FOR SELECT TO authenticated USING (requesting_user_id() = clerk_user_id);

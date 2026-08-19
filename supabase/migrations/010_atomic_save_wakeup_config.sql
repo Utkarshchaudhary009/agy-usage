@@ -29,9 +29,13 @@ DECLARE
   v_owns_all BOOLEAN;
   result_row public.wakeup_configs;
 BEGIN
-  -- The caller may only write their own config row.
-  IF p_clerk_user_id IS DISTINCT FROM public.requesting_user_id() THEN
-    RAISE EXCEPTION 'Not authorized' USING ERRCODE = 'P0001';
+  -- The caller may only write their own config row. Allow service_role (Inngest)
+  -- to act on any user; IS DISTINCT FROM rejects a missing/NULL role claim so a
+  -- crafted JWT cannot bypass the check (same convention as migration 006).
+  IF current_setting('request.jwt.claims', true)::json->>'role' IS DISTINCT FROM 'service_role' THEN
+    IF p_clerk_user_id IS DISTINCT FROM public.requesting_user_id() THEN
+      RAISE EXCEPTION 'Not authorized' USING ERRCODE = 'P0001';
+    END IF;
   END IF;
 
   -- Atomic ownership check: every requested account id must belong to this
