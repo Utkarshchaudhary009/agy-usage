@@ -13,7 +13,7 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 export async function PATCH(_req: NextRequest, { params }: RouteContext) {
   const { userId } = await auth();
-  if (!userId) return unauthorized();
+  if (!userId) return unauthorized("You must be logged in to manage accounts.");
 
   const { id } = await params;
 
@@ -41,7 +41,7 @@ export async function PATCH(_req: NextRequest, { params }: RouteContext) {
 
 export async function DELETE(_req: NextRequest, { params }: RouteContext) {
   const { userId } = await auth();
-  if (!userId) return unauthorized();
+  if (!userId) return unauthorized("You must be logged in to manage accounts.");
 
   const { id } = await params;
 

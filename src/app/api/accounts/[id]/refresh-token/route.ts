@@ -42,7 +42,7 @@ if (
 export async function POST(_req: NextRequest, { params }: RouteContext) {
   const { userId } = await auth();
   if (!userId) {
-    return unauthorized();
+    return unauthorized("You must be logged in to manage accounts.");
   }
 
   if (ratelimit) {
