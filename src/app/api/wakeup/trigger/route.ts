@@ -1,11 +1,17 @@
 import { auth } from "@clerk/nextjs/server";
 import { type NextRequest, NextResponse } from "next/server";
 import { internalError, unauthorized } from "@/lib/api/accounts";
+import { createServerClient } from "@/lib/supabase/server";
+import { WAKEUP_MODELS, type WakeupModelOption } from "@/lib/types/wakeup";
 import { isOnCooldown } from "@/lib/wakeup/cooldown";
 import {
   executeWakeup,
   triggerSingleModel,
 } from "@/lib/wakeup/trigger-service";
+
+const KNOWN_MODEL_IDS = new Set<string>(
+  WAKEUP_MODELS.map((m: WakeupModelOption) => m.id),
+);
 
 export async function POST(request: NextRequest) {
   const { userId } = await auth();
@@ -62,10 +68,48 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      if (!KNOWN_MODEL_IDS.has(modelId)) {
+        return NextResponse.json(
+          {
+            error: "Bad Request",
+            code: "INVALID_MODEL",
+            message: "Unknown model identifier.",
+          },
+          { status: 400 },
+        );
+      }
+
+      // Enforce ownership: the requested account must belong to the
+      // authenticated user. Without this check the untrusted accountId would
+      // reach the token resolver for an arbitrary account (IDOR).
+      const supabase = await createServerClient();
+      const { data: owned, error: ownError } = await supabase
+        .from("google_accounts")
+        .select("id")
+        .eq("id", accountId)
+        .eq("clerk_user_id", userId)
+        .maybeSingle();
+
+      if (ownError) {
+        return internalError("verify account ownership", ownError);
+      }
+      if (!owned) {
+        return NextResponse.json(
+          {
+            error: "Forbidden",
+            code: "ACCOUNT_NOT_OWNED",
+            message: "The requested account does not belong to this user.",
+          },
+          { status: 403 },
+        );
+      }
+
+      const safePrompt = (prompt ?? "hi").slice(0, 4000);
+
       const result = await triggerSingleModel(
         accountId,
         modelId,
-        prompt || "hi",
+        safePrompt,
         maxOutputTokens || 1,
       );
 
