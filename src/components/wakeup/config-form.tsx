@@ -3,7 +3,7 @@
 import { Check, Clock, Link2, Save, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { useMounted } from "@/hooks/use-mounted";
 import type { WakeupConfig, WakeupScheduleMode } from "@/lib/types/wakeup";
 import { describeSchedule, nextTriggerPreview } from "@/lib/wakeup/schedule";
 import { ModelSelector } from "./model-selector";
@@ -27,6 +28,22 @@ interface ConfigFormProps {
   accounts: WakeupAccountOption[];
 }
 
+interface SaveButtonProps {
+  saving: boolean;
+  onClick: () => void;
+  icon?: "save" | "check";
+}
+
+function SaveButton({ saving, onClick, icon = "save" }: SaveButtonProps) {
+  const Icon = saving ? Clock : icon === "check" ? Check : Save;
+  return (
+    <Button onClick={onClick} disabled={saving}>
+      <Icon className={saving ? "animate-spin" : undefined} />
+      {saving ? "Saving..." : "Save configuration"}
+    </Button>
+  );
+}
+
 export function WakeupConfigForm({ initialConfig, accounts }: ConfigFormProps) {
   const router = useRouter();
   const [config, setConfig] = useState<WakeupConfig>(initialConfig);
@@ -36,8 +53,7 @@ export function WakeupConfigForm({ initialConfig, accounts }: ConfigFormProps) {
   // between the server render and hydration. Defer it to after mount so the
   // server and client initial renders match and React never warns about a
   // hydration mismatch.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useMounted();
 
   const patch = (partial: Partial<WakeupConfig>) =>
     setConfig((prev) => ({ ...prev, ...partial }));
@@ -94,7 +110,7 @@ export function WakeupConfigForm({ initialConfig, accounts }: ConfigFormProps) {
           <div className="flex items-center gap-2">
             <Switch
               checked={config.enabled}
-              onCheckedChange={(c) => patch({ enabled: c === true })}
+              onCheckedChange={(c) => patch({ enabled: c })}
               id="wakeup-enabled"
             />
             <Label htmlFor="wakeup-enabled" className="text-base">
@@ -117,10 +133,7 @@ export function WakeupConfigForm({ initialConfig, accounts }: ConfigFormProps) {
             )}
           </p>
         </div>
-        <Button onClick={handleSave} disabled={saving}>
-          {saving ? <Clock className="animate-spin" /> : <Save />}
-          {saving ? "Saving..." : "Save configuration"}
-        </Button>
+        <SaveButton saving={saving} onClick={handleSave} />
       </div>
 
       <fieldset
@@ -277,7 +290,7 @@ export function WakeupConfigForm({ initialConfig, accounts }: ConfigFormProps) {
           >
             <Switch
               checked={config.wakeOnReset}
-              onCheckedChange={(c) => patch({ wakeOnReset: c === true })}
+              onCheckedChange={(c) => patch({ wakeOnReset: c })}
               id="wake-on-reset"
             />
             <span className="flex flex-col">
@@ -301,10 +314,7 @@ export function WakeupConfigForm({ initialConfig, accounts }: ConfigFormProps) {
 
       {config.enabled && accounts.length > 0 && (
         <div className="flex justify-end">
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? <Clock className="animate-spin" /> : <Check />}
-            {saving ? "Saving..." : "Save configuration"}
-          </Button>
+          <SaveButton saving={saving} onClick={handleSave} icon="check" />
         </div>
       )}
     </div>

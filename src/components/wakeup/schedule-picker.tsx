@@ -1,7 +1,7 @@
 "use client";
 
 import { Plus, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import { useMounted } from "@/hooks/use-mounted";
 import type { WakeupScheduleMode } from "@/lib/types/wakeup";
 import { TIME_RE } from "@/lib/types/wakeup";
 import { cn, pluralize } from "@/lib/utils";
@@ -43,8 +44,7 @@ export function SchedulePicker({
   // `nextCronRun` depends on the current time, so its output differs between
   // the server render and hydration. Gate the time-dependent preview behind a
   // mounted flag to keep the initial server and client renders identical.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useMounted();
 
   const cronValidation = useMemo(
     () => (cronExpression ? validateCron(cronExpression) : null),
