@@ -3,9 +3,11 @@ import { type NextRequest, NextResponse } from "next/server";
 import { internalError, unauthorized } from "@/lib/api/accounts";
 import { createServerClient } from "@/lib/supabase/server";
 import { WAKEUP_MODELS, type WakeupModelOption } from "@/lib/types/wakeup";
-import { isOnCooldown } from "@/lib/wakeup/cooldown";
+import { beginWakeupAttempt, endWakeupAttempt } from "@/lib/wakeup/cooldown";
 import {
   executeWakeup,
+  logTrigger,
+  type TriggerResult,
   triggerSingleModel,
 } from "@/lib/wakeup/trigger-service";
 
@@ -31,14 +33,18 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const cooldownInfo = await isOnCooldown(userId);
-  if (cooldownInfo.onCooldown) {
+  // Atomically claim the cooldown slot before doing any work. This closes the
+  // check-then-act race where two overlapping requests could both pass a simple
+  // cooldown read and fire. `beginWakeupAttempt` serializes per user and
+  // reserves the slot up front.
+  const attempt = await beginWakeupAttempt(userId);
+  if (!attempt.allowed) {
     return NextResponse.json(
       {
         error: "Too Many Requests",
         code: "WAKEUP_ON_COOLDOWN",
         message: "Wakeup is on cooldown. Please try again later.",
-        nextAllowedAt: cooldownInfo.nextAllowedAt,
+        nextAllowedAt: attempt.nextAllowedAt,
       },
       { status: 429 },
     );
@@ -106,12 +112,32 @@ export async function POST(request: NextRequest) {
 
       const safePrompt = (prompt ?? "hi").slice(0, 4000);
 
-      const result = await triggerSingleModel(
-        accountId,
-        modelId,
-        safePrompt,
-        maxOutputTokens || 1,
-      );
+      let result: TriggerResult;
+      try {
+        result = await triggerSingleModel(
+          accountId,
+          modelId,
+          safePrompt,
+          maxOutputTokens || 1,
+        );
+
+        // Persist the real log row (replacing the reserved slot) so the cooldown
+        // is now based on the actual trigger time.
+        await logTrigger(
+          userId,
+          accountId,
+          result.modelId,
+          "manual",
+          result.success,
+          result.durationMs,
+          result.error,
+        );
+      } finally {
+        // Always release the reservation, even if logging/trigger failed.
+        if (attempt.attemptId) {
+          await endWakeupAttempt(attempt.attemptId);
+        }
+      }
 
       return NextResponse.json({
         success: result.success,
@@ -120,7 +146,7 @@ export async function POST(request: NextRequest) {
         error: result.error,
       });
     } else {
-      const result = await executeWakeup(userId);
+      const result = await executeWakeup(userId, attempt.attemptId);
 
       return NextResponse.json({
         success: result.success,
@@ -128,7 +154,7 @@ export async function POST(request: NextRequest) {
         successfulTriggers: result.successfulTriggers,
         failedTriggers: result.failedTriggers,
         results: result.results,
-        nextAllowedAt: result.nextAllowedAt,
+        nextAllowedAt: attempt.nextAllowedAt,
         error: result.error,
       });
     }

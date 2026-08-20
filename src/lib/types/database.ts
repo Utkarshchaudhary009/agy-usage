@@ -399,6 +399,23 @@ export interface Database {
         };
         Returns: boolean;
       };
+      begin_wakeup_attempt: {
+        Args: {
+          p_clerk_user_id: string;
+          p_cooldown_minutes?: number;
+        };
+        Returns: {
+          allowed: boolean;
+          next_allowed_at: string | null;
+          attempt_id: string | null;
+        }[];
+      };
+      end_wakeup_attempt: {
+        Args: {
+          p_attempt_id: string;
+        };
+        Returns: undefined;
+      };
     };
     Enums: {
       [_ in never]: never;

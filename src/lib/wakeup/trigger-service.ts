@@ -5,7 +5,7 @@ import { CloudCodeAuthError } from "@/lib/google/errors";
 import { resolveProjectId } from "@/lib/google/project-resolver";
 import { getValidAccessToken } from "@/lib/google/token-manager";
 import { createServiceClient } from "@/lib/supabase/server";
-import { isOnCooldown } from "@/lib/wakeup/cooldown";
+import { endWakeupAttempt } from "@/lib/wakeup/cooldown";
 
 export interface TriggerResult {
   modelId: string;
@@ -99,6 +99,7 @@ export async function triggerAllModels(
 
 export async function executeWakeup(
   clerkUserId: string,
+  attemptId?: string,
 ): Promise<WakeupResult> {
   const supabase = createServiceClient();
 
@@ -128,19 +129,6 @@ export async function executeWakeup(
         failedTriggers: 0,
         results: [],
         error: "Wakeup is disabled",
-      };
-    }
-
-    const cooldownInfo = await isOnCooldown(clerkUserId);
-    if (cooldownInfo.onCooldown) {
-      return {
-        success: false,
-        totalModels: 0,
-        successfulTriggers: 0,
-        failedTriggers: 0,
-        results: [],
-        nextAllowedAt: cooldownInfo.nextAllowedAt,
-        error: "On cooldown",
       };
     }
 
@@ -203,6 +191,14 @@ export async function executeWakeup(
       results: [],
       error: err instanceof Error ? err.message : String(err),
     };
+  } finally {
+    // Release the cooldown slot reserved by `beginWakeupAttempt`. By now the
+    // real per-model log rows have been written (on the success path), so the
+    // cooldown is based on the actual trigger time. On the early-return paths
+    // (config missing/disabled) this simply frees the slot we never used.
+    if (attemptId) {
+      await endWakeupAttempt(attemptId);
+    }
   }
 }
 
@@ -215,7 +211,7 @@ async function markAccountRevoked(accountId: string): Promise<void> {
     .eq("id", accountId);
 }
 
-async function logTrigger(
+export async function logTrigger(
   clerkUserId: string,
   accountId: string,
   modelId: string,
