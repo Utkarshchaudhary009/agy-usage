@@ -1,8 +1,9 @@
 "use client";
 
 import { Check, Clock, Link2, Save, TriangleAlert } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -31,6 +32,13 @@ export function WakeupConfigForm({ initialConfig, accounts }: ConfigFormProps) {
   const [config, setConfig] = useState<WakeupConfig>(initialConfig);
   const [saving, setSaving] = useState(false);
 
+  // `nextRun` relies on the current time (Date.now()/new Date()), which differs
+  // between the server render and hydration. Defer it to after mount so the
+  // server and client initial renders match and React never warns about a
+  // hydration mismatch.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   const patch = (partial: Partial<WakeupConfig>) =>
     setConfig((prev) => ({ ...prev, ...partial }));
 
@@ -43,7 +51,7 @@ export function WakeupConfigForm({ initialConfig, accounts }: ConfigFormProps) {
   };
 
   const scheduleSummary = describeSchedule(config);
-  const nextRun = nextTriggerPreview(config);
+  const nextRun = mounted ? nextTriggerPreview(config) : null;
 
   const handleSave = async () => {
     setSaving(true);
@@ -146,9 +154,9 @@ export function WakeupConfigForm({ initialConfig, accounts }: ConfigFormProps) {
             <div className="flex items-center gap-2 rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
               <Link2 className="size-4" />
               No Google accounts linked yet.{" "}
-              <a href="/accounts" className="text-primary underline">
+              <Link href="/accounts" className="text-primary underline">
                 Link an account
-              </a>
+              </Link>
               .
             </div>
           ) : (

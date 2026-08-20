@@ -1,7 +1,7 @@
 "use client";
 
 import { Plus, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,16 +40,25 @@ export function SchedulePicker({
   onCronChange,
 }: SchedulePickerProps) {
   const [newTime, setNewTime] = useState("");
+  // `nextCronRun` depends on the current time, so its output differs between
+  // the server render and hydration. Gate the time-dependent preview behind a
+  // mounted flag to keep the initial server and client renders identical.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const cronValidation = useMemo(
     () => (cronExpression ? validateCron(cronExpression) : null),
     [cronExpression],
   );
-  const cronPreview = useMemo(() => {
+  const cronDescription = useMemo(() => {
     if (!cronExpression) return null;
     if (!cronValidation?.valid) return cronValidation?.error ?? "Invalid";
+    return describeCron(cronExpression);
+  }, [cronExpression, cronValidation]);
+  const cronNextRunStr = useMemo(() => {
+    if (!mounted || !cronExpression || !cronValidation?.valid) return null;
     const next = nextCronRun(cronExpression);
-    const nextStr = next
+    return next
       ? next.toLocaleString([], {
           month: "short",
           day: "numeric",
@@ -57,8 +66,12 @@ export function SchedulePicker({
           minute: "2-digit",
         })
       : "no match in the next year";
-    return `${describeCron(cronExpression)} — next run ${nextStr}`;
-  }, [cronExpression, cronValidation]);
+  }, [mounted, cronExpression, cronValidation]);
+  const cronPreview = cronDescription
+    ? cronNextRunStr
+      ? `${cronDescription} — next run ${cronNextRunStr}`
+      : cronDescription
+    : null;
 
   const addTime = () => {
     const t = newTime.trim();
