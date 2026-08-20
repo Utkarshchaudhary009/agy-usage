@@ -14,10 +14,9 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import type { WakeupScheduleMode } from "@/lib/types/wakeup";
-import { cn } from "@/lib/utils";
+import { TIME_RE } from "@/lib/types/wakeup";
+import { cn, pluralize } from "@/lib/utils";
 import { describeCron, nextCronRun, validateCron } from "@/lib/wakeup/cron";
-
-const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 interface SchedulePickerProps {
   mode: WakeupScheduleMode;
@@ -99,7 +98,7 @@ export function SchedulePicker({
           <div className="flex items-center justify-between">
             <Label htmlFor="interval-slider">Interval</Label>
             <span className="text-sm font-medium tabular-nums">
-              every {intervalHours} hour{intervalHours === 1 ? "" : "s"}
+              every {intervalHours} {pluralize("hour", intervalHours)}
             </span>
           </div>
           <Slider

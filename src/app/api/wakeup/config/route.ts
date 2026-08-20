@@ -2,7 +2,11 @@ import { auth } from "@clerk/nextjs/server";
 import { type NextRequest, NextResponse } from "next/server";
 import { internalError, unauthorized } from "@/lib/api/accounts";
 import { createServerClient } from "@/lib/supabase/server";
-import { DEFAULT_WAKEUP_CONFIG, parseWakeupConfig } from "@/lib/types/wakeup";
+import {
+  defaultWakeupConfig,
+  mapWakeupConfigRow,
+  parseWakeupConfig,
+} from "@/lib/types/wakeup";
 
 // Returns the current user's wakeup configuration, or sensible defaults when
 // none has been saved yet. RLS scopes the row to the authenticated caller.
@@ -19,31 +23,8 @@ export async function GET() {
 
   if (error) return internalError("load wakeup config", error);
 
-  if (!data) {
-    return NextResponse.json({
-      config: {
-        ...DEFAULT_WAKEUP_CONFIG,
-        clerkUserId: userId,
-        selectedAccountIds: [],
-      },
-    });
-  }
-
   return NextResponse.json({
-    config: {
-      clerkUserId: data.clerk_user_id,
-      enabled: data.enabled,
-      selectedModels: data.selected_models,
-      selectedAccountIds: data.selected_account_ids,
-      scheduleMode: data.schedule_mode,
-      intervalHours: data.interval_hours,
-      dailyTimes: data.daily_times,
-      cronExpression: data.cron_expression,
-      customPrompt: data.custom_prompt,
-      maxOutputTokens: data.max_output_tokens,
-      cooldownMinutes: data.cooldown_minutes,
-      wakeOnReset: data.wake_on_reset,
-    },
+    config: data ? mapWakeupConfigRow(data) : defaultWakeupConfig(userId),
   });
 }
 
@@ -135,19 +116,6 @@ export async function PUT(req: NextRequest) {
   if (upsertError) return internalError("save wakeup config", upsertError);
 
   return NextResponse.json({
-    config: {
-      clerkUserId: userId,
-      enabled: config.enabled,
-      selectedModels: config.selectedModels,
-      selectedAccountIds: filteredAccounts,
-      scheduleMode: config.scheduleMode,
-      intervalHours: config.intervalHours,
-      dailyTimes: config.dailyTimes,
-      cronExpression: config.cronExpression,
-      customPrompt: config.customPrompt,
-      maxOutputTokens: config.maxOutputTokens,
-      cooldownMinutes: config.cooldownMinutes,
-      wakeOnReset: config.wakeOnReset,
-    },
+    config: { ...config, selectedAccountIds: filteredAccounts },
   });
 }

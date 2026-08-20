@@ -32,21 +32,13 @@ const FIELD_BOUNDS: Array<{ min: number; max: number; names?: string[] }> = [
   }, // day of week (0/7=Sun)
 ];
 
-const MONTH_NAMES = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
-const DOW_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+// Display labels (capitalized) for month/day-of-week fields, derived from the
+// uppercase parse names in FIELD_BOUNDS so the two never drift apart.
+function capitalize(name: string): string {
+  return `${name[0]}${name.slice(1).toLowerCase()}`;
+}
+const MONTH_NAMES = (FIELD_BOUNDS[3].names ?? []).map(capitalize);
+const DOW_NAMES = (FIELD_BOUNDS[4].names ?? []).slice(0, 7).map(capitalize);
 
 export interface CronValidation {
   valid: boolean;

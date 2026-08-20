@@ -1,4 +1,5 @@
 import type { WakeupConfig } from "@/lib/types/wakeup";
+import { pluralize } from "@/lib/utils";
 import { describeCron, nextCronRun } from "./cron";
 
 // Human-readable summary of when the wakeup will next run, shown live in the
@@ -7,7 +8,7 @@ export function describeSchedule(config: WakeupConfig): string {
   if (!config.enabled) return "Disabled — wakeup will not run.";
   switch (config.scheduleMode) {
     case "interval":
-      return `Every ${config.intervalHours} hour${config.intervalHours === 1 ? "" : "s"}`;
+      return `Every ${config.intervalHours} ${pluralize("hour", config.intervalHours)}`;
     case "daily":
       return `Daily at ${config.dailyTimes.join(", ") || "—"}`;
     case "custom":

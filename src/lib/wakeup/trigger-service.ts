@@ -24,6 +24,10 @@ export interface WakeupResult {
   error?: string;
 }
 
+// Small pause between sequential model triggers on the same account to avoid
+// hammering the Cloud Code endpoint in a tight loop.
+const INTER_MODEL_DELAY_MS = 100;
+
 export async function triggerSingleModel(
   accountId: string,
   modelId: string,
@@ -87,7 +91,7 @@ export async function triggerAllModels(
     );
     results.push(result);
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, INTER_MODEL_DELAY_MS));
   }
 
   return results;

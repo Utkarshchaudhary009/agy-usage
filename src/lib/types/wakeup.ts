@@ -1,4 +1,8 @@
+import type { Database } from "@/lib/types/database";
+
 export type WakeupScheduleMode = "interval" | "daily" | "custom";
+
+type WakeupConfigRow = Database["public"]["Tables"]["wakeup_configs"]["Row"];
 
 export interface WakeupConfig {
   clerkUserId: string;
@@ -54,7 +58,7 @@ export const DEFAULT_WAKEUP_CONFIG: Omit<
 
 const SCHEDULE_MODES: WakeupScheduleMode[] = ["interval", "daily", "custom"];
 
-const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+export const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export interface WakeupValidationResult {
   valid: boolean;
@@ -153,5 +157,34 @@ export function parseWakeupConfig(
   return {
     ...config,
     validation: { valid: Object.keys(errors).length === 0, errors },
+  };
+}
+
+// Maps a raw `wakeup_configs` database row (snake_case) into the camelCase
+// WakeupConfig used throughout the app. Centralized so the mapping lives in one
+// place instead of being repeated across the page loader and API routes.
+export function mapWakeupConfigRow(row: WakeupConfigRow): WakeupConfig {
+  return {
+    clerkUserId: row.clerk_user_id,
+    enabled: row.enabled,
+    selectedModels: row.selected_models,
+    selectedAccountIds: row.selected_account_ids,
+    scheduleMode: row.schedule_mode,
+    intervalHours: row.interval_hours,
+    dailyTimes: row.daily_times,
+    cronExpression: row.cron_expression,
+    customPrompt: row.custom_prompt,
+    maxOutputTokens: row.max_output_tokens,
+    cooldownMinutes: row.cooldown_minutes,
+    wakeOnReset: row.wake_on_reset,
+  };
+}
+
+// Builds the default config for a user who has not saved one yet.
+export function defaultWakeupConfig(userId: string): WakeupConfig {
+  return {
+    ...DEFAULT_WAKEUP_CONFIG,
+    clerkUserId: userId,
+    selectedAccountIds: [],
   };
 }

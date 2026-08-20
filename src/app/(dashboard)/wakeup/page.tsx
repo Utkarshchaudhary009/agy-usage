@@ -5,7 +5,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { WakeupAccountOption } from "@/components/wakeup/config-form";
 import { WakeupConfigForm } from "@/components/wakeup/config-form";
 import { createServerClient } from "@/lib/supabase/server";
-import { DEFAULT_WAKEUP_CONFIG, type WakeupConfig } from "@/lib/types/wakeup";
+import {
+  defaultWakeupConfig,
+  mapWakeupConfigRow,
+  type WakeupConfig,
+} from "@/lib/types/wakeup";
 
 function WakeupSkeleton() {
   return (
@@ -39,25 +43,8 @@ async function WakeupLoader({ userId }: { userId: string }) {
   }
 
   const config: WakeupConfig = configRow
-    ? {
-        clerkUserId: configRow.clerk_user_id,
-        enabled: configRow.enabled,
-        selectedModels: configRow.selected_models,
-        selectedAccountIds: configRow.selected_account_ids,
-        scheduleMode: configRow.schedule_mode,
-        intervalHours: configRow.interval_hours,
-        dailyTimes: configRow.daily_times,
-        cronExpression: configRow.cron_expression,
-        customPrompt: configRow.custom_prompt,
-        maxOutputTokens: configRow.max_output_tokens,
-        cooldownMinutes: configRow.cooldown_minutes,
-        wakeOnReset: configRow.wake_on_reset,
-      }
-    : {
-        ...DEFAULT_WAKEUP_CONFIG,
-        clerkUserId: userId,
-        selectedAccountIds: [],
-      };
+    ? mapWakeupConfigRow(configRow)
+    : defaultWakeupConfig(userId);
 
   const accountOptions: WakeupAccountOption[] = (accounts ?? []).map((a) => ({
     id: a.id,
