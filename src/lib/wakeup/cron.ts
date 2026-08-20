@@ -128,11 +128,7 @@ export function validateCron(expression: string): CronValidation {
   return { valid: true };
 }
 
-function describeField(
-  field: string,
-  label: string,
-  _names?: string[],
-): string {
+function describeField(field: string, label: string): string {
   if (field === "*") return `every ${label}`;
   return `${label} ${field}`;
 }

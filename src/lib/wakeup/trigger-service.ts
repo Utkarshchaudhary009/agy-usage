@@ -5,6 +5,7 @@ import { CloudCodeAuthError } from "@/lib/google/errors";
 import { resolveProjectId } from "@/lib/google/project-resolver";
 import { getValidAccessToken } from "@/lib/google/token-manager";
 import { createServiceClient } from "@/lib/supabase/server";
+import { isOnCooldown } from "@/lib/wakeup/cooldown";
 
 export interface TriggerResult {
   modelId: string;
@@ -37,7 +38,7 @@ export async function triggerSingleModel(
     const accessToken = await getValidAccessToken(accountId);
     const projectId = await resolveProjectId(accountId);
 
-    const _generateResponse = await streamGenerateContent(
+    await streamGenerateContent(
       accessToken,
       accountId,
       projectId,
@@ -73,11 +74,17 @@ export async function triggerAllModels(
   accountId: string,
   models: string[],
   prompt: string,
+  maxTokens: number,
 ): Promise<TriggerResult[]> {
   const results: TriggerResult[] = [];
 
   for (const modelId of models) {
-    const result = await triggerSingleModel(accountId, modelId, prompt, 1);
+    const result = await triggerSingleModel(
+      accountId,
+      modelId,
+      prompt,
+      maxTokens,
+    );
     results.push(result);
 
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -120,19 +127,15 @@ export async function executeWakeup(
       };
     }
 
-    const onCooldown = await isOnCooldown(clerkUserId, config.cooldown_minutes);
-    if (onCooldown) {
-      const nextAllowedAt = await getNextAllowedTime(
-        clerkUserId,
-        config.cooldown_minutes,
-      );
+    const cooldownInfo = await isOnCooldown(clerkUserId);
+    if (cooldownInfo.onCooldown) {
       return {
-        success: true,
+        success: false,
         totalModels: 0,
         successfulTriggers: 0,
         failedTriggers: 0,
         results: [],
-        nextAllowedAt,
+        nextAllowedAt: cooldownInfo.nextAllowedAt,
         error: "On cooldown",
       };
     }
@@ -160,6 +163,7 @@ export async function executeWakeup(
         account.id,
         config.selected_models,
         config.custom_prompt || "hi",
+        config.max_output_tokens,
       );
 
       results.push(...accountResults);
@@ -196,53 +200,6 @@ export async function executeWakeup(
       error: err instanceof Error ? err.message : String(err),
     };
   }
-}
-
-export async function isOnCooldown(
-  clerkUserId: string,
-  cooldownMinutes: number,
-): Promise<boolean> {
-  const supabase = createServiceClient();
-
-  const { data: lastLog } = await supabase
-    .from("wakeup_logs")
-    .select("created_at")
-    .eq("clerk_user_id", clerkUserId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .single();
-
-  if (!lastLog) return false;
-
-  const lastTriggerTime = new Date(lastLog.created_at);
-  const now = new Date();
-  const cooldownMs = cooldownMinutes * 60 * 1000;
-
-  return now.getTime() - lastTriggerTime.getTime() < cooldownMs;
-}
-
-export async function getNextAllowedTime(
-  clerkUserId: string,
-  cooldownMinutes: number,
-): Promise<string> {
-  const supabase = createServiceClient();
-
-  const { data: lastLog } = await supabase
-    .from("wakeup_logs")
-    .select("created_at")
-    .eq("clerk_user_id", clerkUserId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .single();
-
-  if (!lastLog) {
-    return new Date().toISOString();
-  }
-
-  const nextAllowed = new Date(lastLog.created_at);
-  nextAllowed.setMinutes(nextAllowed.getMinutes() + cooldownMinutes);
-
-  return nextAllowed.toISOString();
 }
 
 async function markAccountRevoked(accountId: string): Promise<void> {
