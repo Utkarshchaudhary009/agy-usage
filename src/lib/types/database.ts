@@ -205,6 +205,104 @@ export interface Database {
           },
         ];
       };
+      wakeup_configs: {
+        Row: {
+          id: string;
+          clerk_user_id: string;
+          enabled: boolean;
+          selected_models: string[];
+          selected_account_ids: string[];
+          schedule_mode: "interval" | "daily" | "custom";
+          interval_hours: number;
+          daily_times: string[];
+          cron_expression: string | null;
+          custom_prompt: string;
+          max_output_tokens: number;
+          cooldown_minutes: number;
+          wake_on_reset: boolean;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          clerk_user_id: string;
+          enabled?: boolean;
+          selected_models?: string[];
+          selected_account_ids?: string[];
+          schedule_mode?: "interval" | "daily" | "custom";
+          interval_hours?: number;
+          daily_times?: string[];
+          cron_expression?: string | null;
+          custom_prompt?: string;
+          max_output_tokens?: number;
+          cooldown_minutes?: number;
+          wake_on_reset?: boolean;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          clerk_user_id?: string;
+          enabled?: boolean;
+          selected_models?: string[];
+          selected_account_ids?: string[];
+          schedule_mode?: "interval" | "daily" | "custom";
+          interval_hours?: number;
+          daily_times?: string[];
+          cron_expression?: string | null;
+          custom_prompt?: string;
+          max_output_tokens?: number;
+          cooldown_minutes?: number;
+          wake_on_reset?: boolean;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      wakeup_logs: {
+        Row: {
+          id: string;
+          clerk_user_id: string;
+          account_id: string | null;
+          model_id: string;
+          trigger_source: "manual" | "scheduled" | "quota_reset";
+          success: boolean;
+          duration_ms: number | null;
+          error: string | null;
+          response_preview: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          clerk_user_id: string;
+          account_id?: string | null;
+          model_id: string;
+          trigger_source: "manual" | "scheduled" | "quota_reset";
+          success: boolean;
+          duration_ms?: number | null;
+          error?: string | null;
+          response_preview?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          clerk_user_id?: string;
+          account_id?: string | null;
+          model_id?: string;
+          trigger_source?: "manual" | "scheduled" | "quota_reset";
+          success?: boolean;
+          duration_ms?: number | null;
+          error?: string | null;
+          response_preview?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "wakeup_logs_account_id_fkey";
+            columns: ["account_id"];
+            isOneToOne: false;
+            referencedRelation: "google_accounts";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       token_refresh_leases: {
         Row: {
           account_id: string;
@@ -300,6 +398,23 @@ export interface Database {
           p_lock_token: string;
         };
         Returns: boolean;
+      };
+      begin_wakeup_attempt: {
+        Args: {
+          p_clerk_user_id: string;
+          p_cooldown_minutes?: number;
+        };
+        Returns: {
+          allowed: boolean;
+          next_allowed_at: string | null;
+          attempt_id: string | null;
+        }[];
+      };
+      end_wakeup_attempt: {
+        Args: {
+          p_attempt_id: string;
+        };
+        Returns: undefined;
       };
     };
     Enums: {
