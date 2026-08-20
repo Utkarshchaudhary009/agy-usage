@@ -55,7 +55,9 @@ function parseField(
     let step = 1;
     let rangePart = part;
     if (part.includes("/")) {
-      const [rp, stepStr] = part.split("/");
+      const segments = part.split("/");
+      if (segments.length !== 2) return null;
+      const [rp, stepStr] = segments;
       rangePart = rp === "*" || rp === "" ? `${bounds.min}-${bounds.max}` : rp;
       const stepNum = Number(stepStr);
       if (!Number.isInteger(stepNum) || stepNum <= 0) return null;
@@ -70,19 +72,17 @@ function parseField(
       if (token === "*") return null;
       if (bounds.names) {
         const idx = bounds.names.indexOf(token.toUpperCase());
-        if (idx >= 0) return bounds.max === 7 && idx === 7 ? 0 : idx;
+        if (idx >= 0) return idx + bounds.min;
       }
       const n = Number(token);
       if (!Number.isInteger(n)) return null;
-      // Cron convention: both 0 and 7 mean Sunday for day-of-week.
-      if (bounds.max === 7 && n === 7) return 0;
       return n;
     };
 
     const lowVal = resolve(low);
     const highVal = resolve(high);
     if (lowVal === null && highVal === null) {
-      values.add(0);
+      for (let v = bounds.min; v <= bounds.max; v += step) values.add(v);
       continue;
     }
     const from = lowVal ?? bounds.min;
@@ -90,6 +90,15 @@ function parseField(
     if (from < bounds.min || to > bounds.max || from > to) return null;
     for (let v = from; v <= to; v += step) values.add(v);
   }
+
+  if (bounds.max === 7) {
+    const normalized = new Set<number>();
+    for (const v of values) {
+      normalized.add(v % 7);
+    }
+    return Array.from(normalized).sort((a, b) => a - b);
+  }
+
   return Array.from(values).sort((a, b) => a - b);
 }
 
@@ -128,9 +137,10 @@ function describeField(field: string, label: string): string {
 export function describeCron(expression: string): string {
   const validation = validateCron(expression);
   if (!validation.valid) return "Invalid expression";
-  const [min, hour, _dom, mon, dow] = expression.trim().split(/\s+/);
+  const [min, hour, dom, mon, dow] = expression.trim().split(/\s+/);
 
   const parts: string[] = [];
+  const domTxt = dom === "*" ? "" : ` on day ${dom}`;
   const monthTxt =
     mon === "*"
       ? ""
@@ -154,12 +164,12 @@ export function describeCron(expression: string): string {
 
   if (hour !== "*" && min !== "*") {
     parts.push(
-      `At ${hour.split(",").join("/")}:${min.split(",").join("/")}${monthTxt}${dowTxt}`,
+      `At ${hour.split(",").join("/")}:${min.split(",").join("/")}${domTxt}${monthTxt}${dowTxt}`,
     );
   } else if (min !== "*" && hour === "*") {
-    parts.push(`Every hour at minute ${min}${monthTxt}${dowTxt}`);
+    parts.push(`Every hour at minute ${min}${domTxt}${monthTxt}${dowTxt}`);
   } else if (min === "*" && hour === "*") {
-    parts.push(`Every minute${monthTxt}${dowTxt}`);
+    parts.push(`Every minute${domTxt}${monthTxt}${dowTxt}`);
   } else {
     parts.push(describeField(min, "minute"));
   }
@@ -188,7 +198,11 @@ export function nextCronRun(
   const candidate = new Date(from.getTime() + 60_000);
   candidate.setSeconds(0, 0);
 
+  const deadline = new Date(from.getTime() + 365 * 24 * 60 * 60 * 1000);
+
   for (let i = 0; i < 366 * 24 * 60; i++) {
+    if (candidate > deadline) break;
+
     const m = candidate.getMonth() + 1;
     const d = candidate.getDate();
     const dw = candidate.getDay();
@@ -200,16 +214,13 @@ export function nextCronRun(
       candidate.setHours(0, 0);
       continue;
     }
-    // day-of-month and day-of-week: cron treats `* *` as OR, but a restricted
-    // pair as AND. We honor the standard "either matches" when both are set,
-    // falling back to AND only when both are restricted.
     const domRestricted = domF !== "*";
     const dowRestricted = dowF !== "*";
     const dayOk =
       !domRestricted && !dowRestricted
         ? true
         : domRestricted && dowRestricted
-          ? doms.includes(d) && dows.includes(dw)
+          ? doms.includes(d) || dows.includes(dw)
           : domRestricted
             ? doms.includes(d)
             : dows.includes(dw);

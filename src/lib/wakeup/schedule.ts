@@ -1,4 +1,4 @@
-import type { WakeupConfig } from "@/lib/types/wakeup";
+import { TIME_RE, type WakeupConfig } from "@/lib/types/wakeup";
 import { pluralize } from "@/lib/utils";
 import { describeCron, nextCronRun } from "./cron";
 
@@ -30,6 +30,27 @@ export function nextTriggerPreview(config: WakeupConfig): Date | null {
   }
   if (config.scheduleMode === "interval") {
     return new Date(Date.now() + config.intervalHours * 60 * 60 * 1000);
+  }
+  if (config.scheduleMode === "daily") {
+    const times = config.dailyTimes
+      .filter((t) => TIME_RE.test(t))
+      .map((t) => {
+        const [h, m] = t.split(":").map(Number);
+        return h * 60 + m;
+      })
+      .sort((a, b) => a - b);
+    if (times.length > 0) {
+      const now = new Date();
+      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+      let target = times.find((t) => t > nowMinutes);
+      const candidate = new Date(now);
+      if (target === undefined) {
+        candidate.setDate(candidate.getDate() + 1);
+        target = times[0];
+      }
+      candidate.setHours(Math.floor(target / 60), target % 60, 0, 0);
+      return candidate;
+    }
   }
   return null;
 }

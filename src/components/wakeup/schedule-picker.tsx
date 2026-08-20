@@ -118,14 +118,14 @@ export function SchedulePicker({
             id="interval-slider"
             value={[intervalHours]}
             min={1}
-            max={24}
+            max={168}
             step={1}
             onValueChange={(v) => onIntervalChange(v[0])}
             aria-label="Interval in hours"
           />
           <div className="flex justify-between text-xs text-muted-foreground">
             <span>1h</span>
-            <span>24h</span>
+            <span>168h</span>
           </div>
         </div>
       )}

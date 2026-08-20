@@ -93,10 +93,12 @@ export function parseWakeupConfig(
   const enabled = raw.enabled === true;
 
   const knownModelIds = new Set(WAKEUP_MODELS.map((m) => m.id));
-  const selectedModels = asStringArray(raw.selectedModels).filter((id) =>
-    knownModelIds.has(id),
+  const selectedModels = Array.from(
+    new Set(
+      asStringArray(raw.selectedModels).filter((id) => knownModelIds.has(id)),
+    ),
   );
-  if (selectedModels.length === 0) {
+  if (enabled && selectedModels.length === 0) {
     errors.selectedModels = "Select at least one model to wake up.";
   }
 
@@ -128,10 +130,9 @@ export function parseWakeupConfig(
           : "") || null
       : null;
 
-  const customPrompt =
-    typeof raw.customPrompt === "string" && raw.customPrompt.trim().length > 0
-      ? raw.customPrompt.trim()
-      : "hi";
+  const rawPrompt =
+    typeof raw.customPrompt === "string" ? raw.customPrompt.trim() : "";
+  const customPrompt = rawPrompt.length > 0 ? rawPrompt.slice(0, 4000) : "hi";
 
   const maxOutputTokens = clampInt(raw.maxOutputTokens, 1, 8192, 1);
   const cooldownMinutes = clampInt(raw.cooldownMinutes, 0, 1440, 60);

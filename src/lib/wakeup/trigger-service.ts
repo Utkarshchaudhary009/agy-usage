@@ -3,7 +3,10 @@ import "server-only";
 import { streamGenerateContent } from "@/lib/google/cloudcode-client";
 import { CloudCodeAuthError } from "@/lib/google/errors";
 import { resolveProjectId } from "@/lib/google/project-resolver";
-import { getValidAccessToken } from "@/lib/google/token-manager";
+import {
+  getValidAccessToken,
+  type TokenAccessOptions,
+} from "@/lib/google/token-manager";
 import { createServiceClient } from "@/lib/supabase/server";
 import { endWakeupAttempt } from "@/lib/wakeup/cooldown";
 
@@ -24,6 +27,13 @@ export interface WakeupResult {
   error?: string;
 }
 
+export type TriggerSource = "manual" | "scheduled" | "quota_reset";
+
+export interface ExecuteWakeupOptions {
+  asBackgroundJob?: boolean;
+  triggerSource?: TriggerSource;
+}
+
 // Small pause between sequential model triggers on the same account to avoid
 // hammering the Cloud Code endpoint in a tight loop.
 const INTER_MODEL_DELAY_MS = 100;
@@ -33,14 +43,15 @@ export async function triggerSingleModel(
   modelId: string,
   prompt: string,
   maxTokens: number,
+  options?: TokenAccessOptions,
 ): Promise<TriggerResult> {
   const startTime = Date.now();
   let success = false;
   let error: string | undefined;
 
   try {
-    const accessToken = await getValidAccessToken(accountId);
-    const projectId = await resolveProjectId(accountId);
+    const accessToken = await getValidAccessToken(accountId, options);
+    const projectId = await resolveProjectId(accountId, options);
 
     await streamGenerateContent(
       accessToken,
@@ -79,6 +90,7 @@ export async function triggerAllModels(
   models: string[],
   prompt: string,
   maxTokens: number,
+  options?: TokenAccessOptions,
 ): Promise<TriggerResult[]> {
   const results: TriggerResult[] = [];
 
@@ -88,6 +100,7 @@ export async function triggerAllModels(
       modelId,
       prompt,
       maxTokens,
+      options,
     );
     results.push(result);
 
@@ -100,8 +113,15 @@ export async function triggerAllModels(
 export async function executeWakeup(
   clerkUserId: string,
   attemptId?: string,
+  options?: ExecuteWakeupOptions,
 ): Promise<WakeupResult> {
   const supabase = createServiceClient();
+
+  const triggerSource: TriggerSource = options?.triggerSource ?? "manual";
+  const tokenOptions: TokenAccessOptions = {
+    asBackgroundJob: options?.asBackgroundJob === true,
+  };
+  let anyLogFailed = false;
 
   try {
     const { data: config, error: configError } = await supabase
@@ -132,6 +152,8 @@ export async function executeWakeup(
       };
     }
 
+    // An explicit (non-empty) selection is honored as an `IN` filter; an empty
+    // selection means "all of my accounts", matching the UI's promise.
     let accounts: { id: string }[] = [];
     if (config.selected_account_ids && config.selected_account_ids.length > 0) {
       const { data: accountsData } = await supabase
@@ -139,6 +161,12 @@ export async function executeWakeup(
         .select("id")
         .eq("clerk_user_id", clerkUserId)
         .in("id", config.selected_account_ids);
+      accounts = accountsData || [];
+    } else {
+      const { data: accountsData } = await supabase
+        .from("google_accounts")
+        .select("id")
+        .eq("clerk_user_id", clerkUserId);
       accounts = accountsData || [];
     }
 
@@ -156,6 +184,7 @@ export async function executeWakeup(
         config.selected_models,
         config.custom_prompt || "hi",
         config.max_output_tokens,
+        tokenOptions,
       );
 
       results.push(...accountResults);
@@ -163,20 +192,24 @@ export async function executeWakeup(
       failedTriggers += accountResults.filter((r) => !r.success).length;
 
       for (const result of accountResults) {
-        await logTrigger(
+        const logged = await logTrigger(
           clerkUserId,
           account.id,
           result.modelId,
-          "manual",
+          triggerSource,
           result.success,
           result.durationMs,
           result.error,
         );
+        if (!logged) anyLogFailed = true;
       }
     }
 
+    // Only release the cooldown reservation when every audit row was persisted.
+    // If a log insert failed we keep the reservation (its created_at anchors the
+    // cooldown) rather than silently dropping the cooldown protection.
     return {
-      success: true,
+      success: results.length > 0 && failedTriggers === 0,
       totalModels: results.length,
       successfulTriggers,
       failedTriggers,
@@ -192,11 +225,10 @@ export async function executeWakeup(
       error: err instanceof Error ? err.message : String(err),
     };
   } finally {
-    // Release the cooldown slot reserved by `beginWakeupAttempt`. By now the
-    // real per-model log rows have been written (on the success path), so the
-    // cooldown is based on the actual trigger time. On the early-return paths
-    // (config missing/disabled) this simply frees the slot we never used.
-    if (attemptId) {
+    // Only release the cooldown reservation when every audit row was persisted.
+    // If a log insert failed we keep the reservation (its created_at anchors the
+    // cooldown) rather than silently dropping the cooldown protection.
+    if (attemptId && !anyLogFailed) {
       await endWakeupAttempt(attemptId);
     }
   }
@@ -215,11 +247,11 @@ export async function logTrigger(
   clerkUserId: string,
   accountId: string,
   modelId: string,
-  triggerSource: "manual" | "scheduled" | "quota_reset",
+  triggerSource: TriggerSource,
   success: boolean,
   durationMs?: number,
   error?: string,
-): Promise<void> {
+): Promise<boolean> {
   const supabase = createServiceClient();
 
   const { error: insertError } = await supabase.from("wakeup_logs").insert({
@@ -234,5 +266,7 @@ export async function logTrigger(
 
   if (insertError) {
     console.error("Failed to log trigger:", insertError);
+    return false;
   }
+  return true;
 }

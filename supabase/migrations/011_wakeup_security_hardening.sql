@@ -19,7 +19,7 @@
 -- 1a. Ownership-guarded begin_wakeup_attempt.
 CREATE OR REPLACE FUNCTION public.begin_wakeup_attempt(
   p_clerk_user_id TEXT,
-  p_cooldown_minutes INTEGER DEFAULT 60
+  p_cooldown_minutes INTEGER DEFAULT NULL
 )
 RETURNS TABLE (allowed BOOLEAN, next_allowed_at TIMESTAMPTZ, attempt_id UUID)
 LANGUAGE plpgsql
@@ -30,6 +30,7 @@ DECLARE
   v_last_at TIMESTAMPTZ;
   v_next_at TIMESTAMPTZ;
   v_attempt_id UUID;
+  v_cooldown INTEGER := p_cooldown_minutes;
 BEGIN
   -- Verify ownership when not invoked by the trusted service_role (mirrors 006).
   IF current_setting('request.jwt.claims', true)::json->>'role'
@@ -38,6 +39,16 @@ BEGIN
       RAISE EXCEPTION 'Not authorized';
     END IF;
   END IF;
+
+  -- Resolve the cooldown window from the user's config when the caller did not
+  -- supply it, so a configured window is always honored. Fail toward the
+  -- conservative default rather than silently skipping the cooldown.
+  IF v_cooldown IS NULL THEN
+    SELECT cooldown_minutes INTO v_cooldown
+    FROM public.wakeup_configs
+    WHERE clerk_user_id = p_clerk_user_id;
+  END IF;
+  v_cooldown := COALESCE(v_cooldown, 60);
 
   -- Serialize attempts for a single user. The lock is held only for the
   -- duration of this function (check + reservation insert), not while the
@@ -51,8 +62,8 @@ BEGIN
   LIMIT 1;
 
   IF v_last_at IS NOT NULL
-     AND (NOW() - v_last_at) < (p_cooldown_minutes || ' minutes')::INTERVAL THEN
-    v_next_at := v_last_at + (p_cooldown_minutes || ' minutes')::INTERVAL;
+     AND (NOW() - v_last_at) < (v_cooldown || ' minutes')::INTERVAL THEN
+    v_next_at := v_last_at + (v_cooldown || ' minutes')::INTERVAL;
     RETURN QUERY SELECT FALSE, v_next_at, NULL::UUID;
     RETURN;
   END IF;
@@ -127,10 +138,23 @@ CREATE POLICY "Users read their own wakeup logs"
   );
 
 -- 3. Least privilege: configs need only SELECT/INSERT/UPDATE from the app.
+-- A single policy may only name ONE command type after FOR, so the operations
+-- are split into separate policies (Postgres rejects `FOR SELECT, INSERT`).
 DROP POLICY IF EXISTS "Users manage their own wakeup config" ON public.wakeup_configs;
-CREATE POLICY "Users manage their own wakeup config"
-  ON public.wakeup_configs
-  FOR SELECT, INSERT, UPDATE TO authenticated
+DROP POLICY IF EXISTS "Users read their own wakeup config" ON public.wakeup_configs;
+DROP POLICY IF EXISTS "Users insert their own wakeup config" ON public.wakeup_configs;
+DROP POLICY IF EXISTS "Users update their own wakeup config" ON public.wakeup_configs;
+
+CREATE POLICY "Users read their own wakeup config"
+  ON public.wakeup_configs FOR SELECT TO authenticated
+  USING (requesting_user_id() = clerk_user_id);
+
+CREATE POLICY "Users insert their own wakeup config"
+  ON public.wakeup_configs FOR INSERT TO authenticated
+  WITH CHECK (requesting_user_id() = clerk_user_id);
+
+CREATE POLICY "Users update their own wakeup config"
+  ON public.wakeup_configs FOR UPDATE TO authenticated
   USING (requesting_user_id() = clerk_user_id)
   WITH CHECK (requesting_user_id() = clerk_user_id);
 

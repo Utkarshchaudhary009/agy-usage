@@ -5,11 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { WakeupAccountOption } from "@/components/wakeup/config-form";
 import { WakeupConfigForm } from "@/components/wakeup/config-form";
 import { createServerClient } from "@/lib/supabase/server";
-import {
-  defaultWakeupConfig,
-  mapWakeupConfigRow,
-  type WakeupConfig,
-} from "@/lib/types/wakeup";
+import { defaultWakeupConfig, mapWakeupConfigRow } from "@/lib/types/wakeup";
 
 function WakeupSkeleton() {
   return (
@@ -24,27 +20,31 @@ function WakeupSkeleton() {
 async function WakeupLoader({ userId }: { userId: string }) {
   const supabase = await createServerClient();
 
-  const [{ data: configRow }, { data: accounts, error: accountsError }] =
-    await Promise.all([
-      supabase
-        .from("wakeup_configs")
-        .select("*")
-        .eq("clerk_user_id", userId)
-        .maybeSingle(),
-      supabase
-        .from("google_accounts")
-        .select("id, email, is_active")
-        .eq("clerk_user_id", userId)
-        .order("added_at", { ascending: true }),
-    ]);
+  const configRow = supabase
+    .from("wakeup_configs")
+    .select("*")
+    .eq("clerk_user_id", userId)
+    .maybeSingle();
+
+  const config = await (async () => {
+    const { data, error } = await configRow;
+    if (error) {
+      console.error("Failed to load wakeup configuration:", error);
+      throw new Error("Failed to load wakeup configuration");
+    }
+    return data ? mapWakeupConfigRow(data) : defaultWakeupConfig(userId);
+  })();
+
+  const { data: accounts, error: accountsError } = await supabase
+    .from("google_accounts")
+    .select("id, email, is_active")
+    .eq("clerk_user_id", userId)
+    .order("added_at", { ascending: true });
 
   if (accountsError) {
     console.error("Failed to load accounts for wakeup page:", accountsError);
+    throw new Error("Failed to load accounts");
   }
-
-  const config: WakeupConfig = configRow
-    ? mapWakeupConfigRow(configRow)
-    : defaultWakeupConfig(userId);
 
   const accountOptions: WakeupAccountOption[] = (accounts ?? []).map((a) => ({
     id: a.id,

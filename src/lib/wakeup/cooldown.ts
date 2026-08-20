@@ -2,67 +2,10 @@ import "server-only";
 
 import { createServiceClient } from "@/lib/supabase/server";
 
-export interface CooldownInfo {
-  onCooldown: boolean;
-  nextAllowedAt?: string;
-}
-
-export async function isOnCooldown(clerkUserId: string): Promise<CooldownInfo> {
-  const supabase = createServiceClient();
-
-  const { data: config } = await supabase
-    .from("wakeup_configs")
-    .select("cooldown_minutes")
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
-
-  const cooldownMinutes = config?.cooldown_minutes ?? 60;
-
-  const { data: lastLog } = await supabase
-    .from("wakeup_logs")
-    .select("created_at")
-    .eq("clerk_user_id", clerkUserId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (!lastLog) {
-    return { onCooldown: false };
-  }
-
-  const lastTriggerTime = new Date(lastLog.created_at);
-  const now = new Date();
-  const cooldownMs = cooldownMinutes * 60 * 1000;
-
-  const isOnCooldown = now.getTime() - lastTriggerTime.getTime() < cooldownMs;
-
-  if (isOnCooldown) {
-    const nextAllowed = new Date(lastTriggerTime);
-    nextAllowed.setMinutes(nextAllowed.getMinutes() + cooldownMinutes);
-
-    return {
-      onCooldown: true,
-      nextAllowedAt: nextAllowed.toISOString(),
-    };
-  }
-
-  return { onCooldown: false };
-}
-
 export interface BeginAttemptResult {
   allowed: boolean;
   nextAllowedAt?: string;
   attemptId?: string;
-}
-
-async function getConfigCooldownMinutes(clerkUserId: string): Promise<number> {
-  const supabase = createServiceClient();
-  const { data } = await supabase
-    .from("wakeup_configs")
-    .select("cooldown_minutes")
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
-  return data?.cooldown_minutes ?? 60;
 }
 
 // Atomically claim a cooldown slot for `clerkUserId`. This combines the
@@ -71,18 +14,19 @@ async function getConfigCooldownMinutes(clerkUserId: string): Promise<number> {
 // overlapping triggers could both pass the cooldown and fire. The caller must
 // later release the slot with `endWakeupAttempt` once the real per-model log
 // rows have been written.
+//
+// The configured cooldown window is read inside the RPC itself (falling back to
+// 60 minutes when no config row exists), so a failure to read the config in the
+// application layer can never silently bypass a longer configured cooldown.
 export async function beginWakeupAttempt(
   clerkUserId: string,
   cooldownMinutes?: number,
 ): Promise<BeginAttemptResult> {
   const supabase = createServiceClient();
 
-  const minutes =
-    cooldownMinutes ?? (await getConfigCooldownMinutes(clerkUserId));
-
   const { data, error } = await supabase.rpc("begin_wakeup_attempt", {
     p_clerk_user_id: clerkUserId,
-    p_cooldown_minutes: minutes,
+    p_cooldown_minutes: cooldownMinutes,
   });
 
   if (error) {
@@ -107,13 +51,25 @@ export async function beginWakeupAttempt(
 // Releases a cooldown slot reserved by `beginWakeupAttempt`. Should be called
 // after the real per-model log rows are persisted so the cooldown is then based
 // on the actual trigger time rather than the reservation. Deleting an already
-// deleted (or never created) id is a harmless no-op.
+// deleted (or never created) id is a harmless no-op. We retry a few times
+// because an orphaned reservation would otherwise pin the user on cooldown
+// indefinitely.
 export async function endWakeupAttempt(attemptId: string): Promise<void> {
   const supabase = createServiceClient();
-  const { error } = await supabase.rpc("end_wakeup_attempt", {
-    p_attempt_id: attemptId,
-  });
-  if (error) {
-    console.error("end_wakeup_attempt failed:", error);
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { error } = await supabase.rpc("end_wakeup_attempt", {
+      p_attempt_id: attemptId,
+    });
+    if (!error) return;
+    lastError = error;
+    console.error(
+      "end_wakeup_attempt failed (attempt %d):",
+      attempt + 1,
+      error,
+    );
   }
+  console.error("end_wakeup_attempt gave up releasing attempt", attemptId, {
+    error: lastError,
+  });
 }

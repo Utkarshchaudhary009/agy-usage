@@ -33,6 +33,26 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const hasAccountId =
+    typeof body === "object" && body !== null && "accountId" in body;
+  const hasModelId =
+    typeof body === "object" && body !== null && "modelId" in body;
+
+  // A payload that names only one of accountId/modelId is malformed. Treat it
+  // as a client error rather than silently falling through to a bulk run that
+  // would trigger the caller's entire saved configuration.
+  if (hasAccountId !== hasModelId) {
+    return NextResponse.json(
+      {
+        error: "Bad Request",
+        code: "MISSING_PARAMS",
+        message:
+          "Both accountId and modelId are required for specific triggers.",
+      },
+      { status: 400 },
+    );
+  }
+
   // Atomically claim the cooldown slot before doing any work. This closes the
   // check-then-act race where two overlapping requests could both pass a simple
   // cooldown read and fire. `beginWakeupAttempt` serializes per user and
@@ -50,16 +70,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const hasAccountId = typeof body === "object" && body && "accountId" in body;
-  const hasModelId = typeof body === "object" && body && "modelId" in body;
+  let handledByExecute = false;
+  let loggedOk = true;
 
   try {
     if (hasAccountId && hasModelId) {
       const { accountId, modelId, prompt, maxOutputTokens } = body as {
         accountId?: string;
         modelId?: string;
-        prompt?: string;
-        maxOutputTokens?: number;
+        prompt?: unknown;
+        maxOutputTokens?: unknown;
       };
 
       if (!accountId || !modelId) {
@@ -110,7 +130,14 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const safePrompt = (prompt ?? "hi").slice(0, 4000);
+      const safePrompt =
+        typeof prompt === "string" && prompt.length > 0
+          ? prompt.slice(0, 4000)
+          : "hi";
+      const safeMaxTokens =
+        typeof maxOutputTokens === "number" && maxOutputTokens > 0
+          ? Math.floor(maxOutputTokens)
+          : 1;
 
       let result: TriggerResult;
       try {
@@ -118,26 +145,27 @@ export async function POST(request: NextRequest) {
           accountId,
           modelId,
           safePrompt,
-          maxOutputTokens || 1,
+          safeMaxTokens,
         );
-
-        // Persist the real log row (replacing the reserved slot) so the cooldown
-        // is now based on the actual trigger time.
-        await logTrigger(
-          userId,
-          accountId,
-          result.modelId,
-          "manual",
-          result.success,
-          result.durationMs,
-          result.error,
-        );
-      } finally {
-        // Always release the reservation, even if logging/trigger failed.
-        if (attempt.attemptId) {
-          await endWakeupAttempt(attempt.attemptId);
-        }
+      } catch (err) {
+        // A failed trigger still must not leave the cooldown reservation
+        // dangling; release it (the failure is already surfaced below).
+        loggedOk = false;
+        throw err;
       }
+
+      // Persist the real log row (replacing the reserved slot) so the cooldown
+      // is now based on the actual trigger time. If logging fails we deliberately
+      // keep the reservation so the cooldown is still enforced.
+      loggedOk = await logTrigger(
+        userId,
+        accountId,
+        result.modelId,
+        "manual",
+        result.success,
+        result.durationMs,
+        result.error,
+      );
 
       return NextResponse.json({
         success: result.success,
@@ -146,6 +174,7 @@ export async function POST(request: NextRequest) {
         error: result.error,
       });
     } else {
+      handledByExecute = true;
       const result = await executeWakeup(userId, attempt.attemptId);
 
       return NextResponse.json({
@@ -160,5 +189,12 @@ export async function POST(request: NextRequest) {
     }
   } catch (err) {
     return internalError("wakeup trigger", err);
+  } finally {
+    // Release the reservation on every path that did not delegate to
+    // executeWakeup (which releases it itself), and only when the real log was
+    // persisted so a logging failure still enforces the cooldown.
+    if (attempt.attemptId && !handledByExecute && loggedOk) {
+      await endWakeupAttempt(attempt.attemptId);
+    }
   }
 }

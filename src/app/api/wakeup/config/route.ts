@@ -78,9 +78,11 @@ export async function PUT(req: NextRequest) {
   );
 
   // Server-side cron validation (the only hard requirement for `custom` mode).
-  if (config.scheduleMode === "custom" && config.cronExpression) {
+  // Validate unconditionally in custom mode, even when the expression is empty,
+  // so an unusable custom schedule can never be persisted.
+  if (config.scheduleMode === "custom") {
     const { validateCron } = await import("@/lib/wakeup/cron");
-    const result = validateCron(config.cronExpression);
+    const result = validateCron(config.cronExpression ?? "");
     if (!result.valid) {
       return NextResponse.json(
         {
