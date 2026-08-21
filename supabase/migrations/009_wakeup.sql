@@ -43,15 +43,59 @@ CREATE TABLE public.wakeup_logs (
 CREATE INDEX idx_wakeup_logs_time
   ON public.wakeup_logs (clerk_user_id, created_at DESC);
 
--- Row Level Security: every row is scoped to the owning Clerk user.
+-- Foreign-keyed column used for cascade deletes and joins should be indexed.
+CREATE INDEX idx_wakeup_logs_account_id
+  ON public.wakeup_logs (account_id);
+
+-- Row Level Security. Every row is scoped to the owning Clerk user.
+--
+-- Config is user-managed (read / insert / update); logs are append-only audit
+-- records (read / insert). This mirrors the granular, least-privilege policies
+-- used for quota_cache / quota_snapshots (migrations 004 / 007). No DELETE policy
+-- is created, so users can never delete their config or forge/delete logs, and no
+-- UPDATE policy exists for logs so they stay immutable once written.
 ALTER TABLE public.wakeup_configs ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users manage their own wakeup config"
+CREATE POLICY "Users can read their own wakeup config"
   ON public.wakeup_configs
-  FOR ALL TO authenticated
+  FOR SELECT TO authenticated
   USING (requesting_user_id() = clerk_user_id);
+CREATE POLICY "Users can insert their own wakeup config"
+  ON public.wakeup_configs
+  FOR INSERT TO authenticated
+  WITH CHECK (requesting_user_id() = clerk_user_id);
+CREATE POLICY "Users can update their own wakeup config"
+  ON public.wakeup_configs
+  FOR UPDATE TO authenticated
+  USING (requesting_user_id() = clerk_user_id)
+  WITH CHECK (requesting_user_id() = clerk_user_id);
+
+-- Defense in depth: drop DELETE for users (no DELETE route exists; the absence of
+-- a DELETE policy already denies it, this just makes intent explicit).
+REVOKE DELETE ON public.wakeup_configs FROM authenticated;
 
 ALTER TABLE public.wakeup_logs ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users manage their own wakeup logs"
+CREATE POLICY "Users can read their own wakeup logs"
   ON public.wakeup_logs
-  FOR ALL TO authenticated
+  FOR SELECT TO authenticated
   USING (requesting_user_id() = clerk_user_id);
+-- Logs may only be written for an account the user actually owns. A NULL
+-- account_id is allowed (config-level / account-agnostic triggers); a non-NULL one
+-- must reference one of the caller's own google_accounts rows, otherwise a user
+-- could forge audit entries against another account.
+CREATE POLICY "Users can insert their own wakeup logs"
+  ON public.wakeup_logs
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    requesting_user_id() = clerk_user_id
+    AND (
+      account_id IS NULL
+      OR EXISTS (
+        SELECT 1 FROM public.google_accounts ga
+        WHERE ga.id = wakeup_logs.account_id
+          AND ga.clerk_user_id = requesting_user_id()
+      )
+    )
+  );
+
+-- Logs are append-only: users can read and insert, never update or delete.
+REVOKE UPDATE, DELETE ON public.wakeup_logs FROM authenticated;

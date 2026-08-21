@@ -24,11 +24,13 @@ CREATE TABLE IF NOT EXISTS public.wakeup_cooldown_locks (
 CREATE INDEX IF NOT EXISTS idx_wakeup_cooldown_locks_time
   ON public.wakeup_cooldown_locks (clerk_user_id, last_trigger_at DESC);
 
+-- The lock table is only ever touched via the SECURITY DEFINER RPCs below, which
+-- perform their own ownership check and run as the table owner (bypassing RLS).
+-- Revoke all direct access from anon/authenticated so a caller can only mutate the
+-- lock through begin_wakeup / get_wakeup_cooldown_remaining_ms -- mirroring the
+-- service-only lease table in migration 008.
 ALTER TABLE public.wakeup_cooldown_locks ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users manage their own wakeup cooldown lock"
-  ON public.wakeup_cooldown_locks
-  FOR ALL TO authenticated
-  USING (requesting_user_id() = clerk_user_id);
+REVOKE ALL ON public.wakeup_cooldown_locks FROM anon, authenticated;
 
 -- Milliseconds remaining until the cooldown clears (0 when not on cooldown).
 -- The boundary is the lock row's last_trigger_at, so it reflects the moment a
@@ -44,6 +46,10 @@ DECLARE
   v_last      TIMESTAMPTZ;
   v_remaining NUMERIC;
 BEGIN
+  IF p_clerk_user_id IS NULL THEN
+    RAISE EXCEPTION 'Missing user id';
+  END IF;
+
   -- Verify ownership unless called by the trusted backend (Inngest workers).
   -- IS DISTINCT FROM: a missing/NULL role claim must NOT bypass the check.
   IF current_setting('request.jwt.claims', true)::json->>'role'
@@ -82,6 +88,10 @@ AS $$
 DECLARE
   v_last TIMESTAMPTZ;
 BEGIN
+  IF p_clerk_user_id IS NULL THEN
+    RAISE EXCEPTION 'Missing user id';
+  END IF;
+
   IF current_setting('request.jwt.claims', true)::json->>'role'
      IS DISTINCT FROM 'service_role' THEN
     IF public.requesting_user_id() IS DISTINCT FROM p_clerk_user_id THEN
