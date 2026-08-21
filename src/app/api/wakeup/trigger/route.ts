@@ -7,16 +7,31 @@ import {
   unauthorized,
 } from "@/lib/api/accounts";
 import { createServerClient } from "@/lib/supabase/server";
+import { WAKEUP_MODEL_IDS } from "@/lib/types/wakeup";
 import { getCooldownRemainingMs } from "@/lib/wakeup/cooldown";
 import {
   executeWakeup,
   triggerSingleModel,
 } from "@/lib/wakeup/trigger-service";
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 type TriggerBody = {
   accountId?: string;
   modelId?: string;
 };
+
+function badRequest(message: string) {
+  return NextResponse.json(
+    {
+      error: "Bad Request",
+      code: "INVALID_INPUT",
+      message,
+    },
+    { status: 400 },
+  );
+}
 
 export async function POST(req: NextRequest) {
   const { userId } = await auth();
@@ -34,6 +49,17 @@ export async function POST(req: NextRequest) {
 
   // Single-model, single-account trigger.
   if (body.accountId && body.modelId) {
+    // Validate inputs before any external call or lookup.
+    if (typeof body.accountId !== "string" || !UUID_RE.test(body.accountId)) {
+      return badRequest("accountId must be a valid UUID.");
+    }
+    if (
+      typeof body.modelId !== "string" ||
+      !WAKEUP_MODEL_IDS.includes(body.modelId)
+    ) {
+      return badRequest("modelId is not an allowed model.");
+    }
+
     const supabase = await createServerClient();
     const { data: account, error: lookupError } = await supabase
       .from("google_accounts")

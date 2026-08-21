@@ -6,6 +6,9 @@ import { DAILY_TIME_RE, isValidCronExpression } from "./schedule";
 
 const SCHEDULE_MODES: ScheduleMode[] = ["interval", "daily", "custom"];
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export type ValidationResult =
   | { ok: true; config: WakeupConfig }
   | { ok: false; error: string; field?: string };
@@ -47,7 +50,7 @@ export function validateWakeupConfig(input: unknown): ValidationResult {
   config.selectedModels = selectedModels;
 
   config.selectedAccountIds = asStringArray(raw.selectedAccountIds).filter(
-    (id) => id.length > 0,
+    (id) => UUID_RE.test(id),
   );
 
   const scheduleMode = raw.scheduleMode;
