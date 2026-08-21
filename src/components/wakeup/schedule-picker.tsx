@@ -1,20 +1,10 @@
 "use client";
 
 import { Plus, X } from "lucide-react";
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { ScheduleMode } from "@/lib/types/wakeup";
 import { cn } from "@/lib/utils";
-
-interface DailyTimeEntry {
-  id: string;
-  time: string;
-}
-
-function makeId(): string {
-  return Math.random().toString(36).slice(2);
-}
 
 const MODES: { value: ScheduleMode; label: string; hint: string }[] = [
   { value: "interval", label: "Interval", hint: "Every N hours" },
@@ -45,31 +35,30 @@ export function SchedulePicker({
   onCronChange,
   disabled,
 }: SchedulePickerProps) {
-  // Daily times are tracked with stable ids so list edits don't disturb input
-  // focus or component state. The parent still owns the canonical string[].
-  const [entries, setEntries] = useState<DailyTimeEntry[]>(() =>
-    dailyTimes.map((time) => ({ id: makeId(), time })),
-  );
-
-  function syncEntries(next: DailyTimeEntry[]) {
-    setEntries(next);
-    onDailyTimesChange(next.map((entry) => entry.time));
-  }
+  // Entries are derived from the parent-owned `dailyTimes` prop (the single
+  // source of truth) rather than kept in internal state. This keeps the picker
+  // in sync when the parent resets the form (e.g. after a successful save) and
+  // guarantees deterministic, index-based keys so the server render and client
+  // hydration agree — Math.random() ids would cause a hydration mismatch.
+  const entries = dailyTimes.map((time, index) => ({
+    id: `time-${index}`,
+    time,
+  }));
 
   function addDailyTime() {
-    syncEntries([...entries, { id: makeId(), time: "12:00" }]);
+    onDailyTimesChange([...dailyTimes, "12:00"]);
   }
 
   function removeDailyTime(id: string) {
-    syncEntries(entries.filter((entry) => entry.id !== id));
+    const index = entries.findIndex((entry) => entry.id === id);
+    if (index === -1) return;
+    onDailyTimesChange(dailyTimes.filter((_, i) => i !== index));
   }
 
   function updateDailyTime(id: string, value: string) {
-    syncEntries(
-      entries.map((entry) =>
-        entry.id === id ? { ...entry, time: value } : entry,
-      ),
-    );
+    const index = entries.findIndex((entry) => entry.id === id);
+    if (index === -1) return;
+    onDailyTimesChange(dailyTimes.map((t, i) => (i === index ? value : t)));
   }
 
   return (

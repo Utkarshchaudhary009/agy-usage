@@ -1,7 +1,7 @@
 "use client";
 
 import { Clock, Loader2, Save, Zap } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,6 +30,12 @@ interface ConfigFormProps {
 export function ConfigForm({ config, accounts }: ConfigFormProps) {
   const [form, setForm] = useState<WakeupConfig>(config);
   const [isSaving, setIsSaving] = useState(false);
+
+  // The "next trigger" preview is formatted with the locale/timezone of the
+  // viewer. That differs between the server (SSR) and the client, so rendering
+  // it during hydration would cause a mismatch. Only show it after mount.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   function update(partial: Partial<WakeupConfig>) {
     setForm((prev) => ({ ...prev, ...partial }));
@@ -191,7 +197,7 @@ export function ConfigForm({ config, accounts }: ConfigFormProps) {
                 Invalid cron expression.
               </p>
             )}
-            {nextTrigger && (
+            {mounted && nextTrigger && (
               <p className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Clock className="size-4" />
                 Next trigger:{" "}
