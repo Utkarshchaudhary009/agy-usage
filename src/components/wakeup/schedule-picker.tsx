@@ -2,7 +2,7 @@
 
 import { Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Input, NumericInput } from "@/components/ui/input";
 import type { ScheduleMode } from "@/lib/types/wakeup";
 import { cn } from "@/lib/utils";
 
@@ -92,15 +92,14 @@ export function SchedulePicker({
           >
             Every
           </label>
-          <Input
+          <NumericInput
             id="interval-hours"
-            type="number"
             min={1}
             max={168}
             className="w-24"
             value={intervalHours}
             disabled={disabled}
-            onChange={(event) => onIntervalChange(Number(event.target.value))}
+            onValueChange={onIntervalChange}
           />
           <span className="text-sm text-muted-foreground">hours</span>
         </div>

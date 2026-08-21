@@ -11,7 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { Input, NumericInput } from "@/components/ui/input";
 import type {
   ScheduleMode,
   WakeupAccountOption,
@@ -233,16 +233,13 @@ export function ConfigForm({ config, accounts }: ConfigFormProps) {
                 <span className="text-xs font-medium text-muted-foreground">
                   Max output tokens
                 </span>
-                <Input
+                <NumericInput
                   id="wakeup-max-output-tokens"
-                  type="number"
                   min={1}
                   max={8192}
                   value={form.maxOutputTokens}
                   disabled={isSaving}
-                  onChange={(event) =>
-                    update({ maxOutputTokens: Number(event.target.value) })
-                  }
+                  onValueChange={(value) => update({ maxOutputTokens: value })}
                 />
               </label>
               <label
@@ -252,16 +249,13 @@ export function ConfigForm({ config, accounts }: ConfigFormProps) {
                 <span className="text-xs font-medium text-muted-foreground">
                   Cooldown (minutes)
                 </span>
-                <Input
+                <NumericInput
                   id="wakeup-cooldown-minutes"
-                  type="number"
                   min={0}
                   max={1440}
                   value={form.cooldownMinutes}
                   disabled={isSaving}
-                  onChange={(event) =>
-                    update({ cooldownMinutes: Number(event.target.value) })
-                  }
+                  onValueChange={(value) => update({ cooldownMinutes: value })}
                 />
               </label>
             </div>
@@ -282,7 +276,7 @@ export function ConfigForm({ config, accounts }: ConfigFormProps) {
           </section>
 
           <div className="flex justify-end">
-            <Button onClick={handleSave} disabled={isSaving}>
+            <Button type="button" onClick={handleSave} disabled={isSaving}>
               {isSaving ? <Loader2 className="animate-spin" /> : <Save />}
               {isSaving ? "Saving..." : "Save configuration"}
             </Button>
@@ -328,9 +322,11 @@ function Toggle({
   );
 }
 
+const NEXT_RUN_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
 function formatNextRun(date: Date): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
+  return NEXT_RUN_FORMATTER.format(date);
 }
