@@ -8,9 +8,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "prebuild": "cp .env.local.example .env.local 2>/dev/null || true",
     "build": "next build",
-    "postbuild": "rm -f .env.local",
     "start": "next start",
     "lint": "biome check",
     "lint:write": "biome check --write",

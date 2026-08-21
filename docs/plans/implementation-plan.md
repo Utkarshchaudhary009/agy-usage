@@ -867,65 +867,65 @@ src/app/api/quota/history/route.ts
 **Feature**: Configure auto-wakeup schedules (replaces CLI's `wakeup config`)
 
 **Tasks**:
-- [ ] Create migration `004_wakeup.sql`:
-  ```sql
-  CREATE TABLE public.wakeup_configs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    clerk_user_id TEXT NOT NULL UNIQUE,
-    enabled BOOLEAN DEFAULT false,
-    selected_models TEXT[] DEFAULT '{claude-sonnet-4-5,gemini-3-flash,gemini-3-pro-low}',
-    selected_account_ids UUID[] DEFAULT '{}',
-    schedule_mode TEXT DEFAULT 'interval'
-      CHECK (schedule_mode IN ('interval', 'daily', 'custom')),
-    interval_hours INTEGER DEFAULT 6,
-    daily_times TEXT[] DEFAULT '{09:00,15:00,21:00}',
-    cron_expression TEXT,
-    custom_prompt TEXT DEFAULT 'hi',
-    max_output_tokens INTEGER DEFAULT 1,
-    cooldown_minutes INTEGER DEFAULT 60,
-    wake_on_reset BOOLEAN DEFAULT false,
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-  );
+- [x] Create migration `009_wakeup.sql` (renamed from `004_wakeup.sql` to avoid colliding with the existing `004_quota_cache.sql`):
+   ```sql
+   CREATE TABLE public.wakeup_configs (
+     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+     clerk_user_id TEXT NOT NULL UNIQUE,
+     enabled BOOLEAN DEFAULT false,
+     selected_models TEXT[] DEFAULT '{claude-sonnet-4-5,gemini-3-flash,gemini-3-pro-low}',
+     selected_account_ids UUID[] DEFAULT '{}',
+     schedule_mode TEXT DEFAULT 'interval'
+       CHECK (schedule_mode IN ('interval', 'daily', 'custom')),
+     interval_hours INTEGER DEFAULT 6,
+     daily_times TEXT[] DEFAULT '{09:00,15:00,21:00}',
+     cron_expression TEXT,
+     custom_prompt TEXT DEFAULT 'hi',
+     max_output_tokens INTEGER DEFAULT 1,
+     cooldown_minutes INTEGER DEFAULT 60,
+     wake_on_reset BOOLEAN DEFAULT false,
+     updated_at TIMESTAMPTZ DEFAULT NOW()
+   );
 
-  CREATE TABLE public.wakeup_logs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    clerk_user_id TEXT NOT NULL,
-    account_id UUID REFERENCES public.google_accounts(id) ON DELETE CASCADE,
-    model_id TEXT NOT NULL,
-    trigger_source TEXT NOT NULL
-      CHECK (trigger_source IN ('manual', 'scheduled', 'quota_reset')),
-    success BOOLEAN NOT NULL,
-    duration_ms INTEGER,
-    error TEXT,
-    response_preview TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-  );
+   CREATE TABLE public.wakeup_logs (
+     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+     clerk_user_id TEXT NOT NULL,
+     account_id UUID REFERENCES public.google_accounts(id) ON DELETE CASCADE,
+     model_id TEXT NOT NULL,
+     trigger_source TEXT NOT NULL
+       CHECK (trigger_source IN ('manual', 'scheduled', 'quota_reset')),
+     success BOOLEAN NOT NULL,
+     duration_ms INTEGER,
+     error TEXT,
+     response_preview TEXT,
+     created_at TIMESTAMPTZ DEFAULT NOW()
+   );
 
-  CREATE INDEX idx_wakeup_logs_time
-    ON public.wakeup_logs (clerk_user_id, created_at DESC);
-  ```
-- [ ] Build wakeup config page `src/app/(dashboard)/wakeup/page.tsx`
-- [ ] Build config form `src/components/wakeup/config-form.tsx`:
-  - Enable/disable toggle
-  - Model selector (checkboxes: claude-sonnet-4-5, gemini-3-flash, gemini-3-pro-low)
-  - Account selector (which linked accounts to trigger)
-  - Schedule mode selector (interval / daily times / custom cron)
-  - Interval slider (every N hours)
-  - Daily time picker (add/remove times)
-  - Custom cron expression input with human-readable preview
-  - Save button → PUT `/api/wakeup/config`
-- [ ] Create wakeup config API routes:
-  - `GET /api/wakeup/config` → get current config
-  - `PUT /api/wakeup/config` → update config (validates, then saves)
-  - Both verify Clerk auth
-- [ ] Show "next trigger" preview based on schedule
-- [ ] Validate cron expressions server-side
+   CREATE INDEX idx_wakeup_logs_time
+     ON public.wakeup_logs (clerk_user_id, created_at DESC);
+   ```
+- [x] Build wakeup config page `src/app/(dashboard)/wakeup/page.tsx`
+- [x] Build config form `src/components/wakeup/config-form.tsx`:
+   - Enable/disable toggle
+   - Model selector (checkboxes: claude-sonnet-4-5, gemini-3-flash, gemini-3-pro-low)
+   - Account selector (which linked accounts to trigger)
+   - Schedule mode selector (interval / daily times / custom cron)
+   - Interval slider (every N hours)
+   - Daily time picker (add/remove times)
+   - Custom cron expression input with human-readable preview
+   - Save button → PUT `/api/wakeup/config`
+- [x] Create wakeup config API routes:
+   - `GET /api/wakeup/config` → get current config
+   - `PUT /api/wakeup/config` → update config (validates, then saves)
+   - Both verify Clerk auth
+- [x] Show "next trigger" preview based on schedule
+- [x] Validate cron expressions server-side
 
 **Deliverable**: Users can configure their wakeup schedule through a polished UI. Config saved to Supabase.
 
 **Files**:
 ```
-supabase/migrations/004_wakeup.sql
+supabase/migrations/009_wakeup.sql
 src/app/(dashboard)/wakeup/page.tsx
 src/components/wakeup/config-form.tsx
 src/components/wakeup/model-selector.tsx
@@ -941,7 +941,7 @@ src/lib/types/wakeup.ts
 **Feature**: Server-side wakeup trigger service (ported from CLI's `trigger-service.ts`)
 
 **Tasks**:
-- [ ] Create trigger service `src/lib/wakeup/trigger-service.ts`:
+- [x] Create trigger service `src/lib/wakeup/trigger-service.ts`:
   - `triggerSingleModel(accountId, modelId, prompt, maxTokens): Promise<TriggerResult>`
     - Get valid token via token-manager
     - Resolve project ID
@@ -956,10 +956,10 @@ src/lib/types/wakeup.ts
     - Check cooldown (skip if triggered within cooldown period)
     - For each selected account → trigger all selected models
     - Return aggregate result
-- [ ] Create cooldown checker `src/lib/wakeup/cooldown.ts`:
+- [x] Create cooldown checker `src/lib/wakeup/cooldown.ts`:
   - `isOnCooldown(clerkUserId): Promise<boolean>`
   - Query last trigger from `wakeup_logs`, compare with `cooldown_minutes`
-- [ ] Create manual trigger API route `src/app/api/wakeup/trigger/route.ts`:
+- [x] Create manual trigger API route `src/app/api/wakeup/trigger/route.ts`:
   - `POST /api/wakeup/trigger` → trigger now for current user
   - `POST /api/wakeup/trigger` with body `{ accountId, modelId }` → specific trigger
   - Clerk auth required
