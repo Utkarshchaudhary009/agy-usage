@@ -8,7 +8,7 @@ import { getValidAccessToken } from "@/lib/google/token-manager";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/types/database";
 import { DEFAULT_WAKEUP_CONFIG } from "@/lib/types/wakeup";
-import { isOnCooldown } from "./cooldown";
+import { beginWakeup } from "./cooldown";
 
 export type TriggerSource = "manual" | "scheduled" | "quota_reset";
 
@@ -222,11 +222,16 @@ export async function executeWakeup(
   if (!config) return skip("no_config");
   if (!config.enabled) return skip("disabled");
 
-  if (
-    !options?.bypassCooldown &&
-    (await isOnCooldown(clerkUserId, asBackgroundJob))
-  ) {
-    return skip("cooldown");
+  if (!options?.bypassCooldown) {
+    // Atomic check-and-claim: under a per-user advisory lock this stamps the
+    // cooldown boundary, so a concurrent wakeup (manual click vs scheduled job,
+    // or two Inngest workers) cannot also pass the gate and stampede the API.
+    // A false return means the cooldown is still active and we must not fire.
+    const cooldownMinutes =
+      config.cooldown_minutes ?? DEFAULT_WAKEUP_CONFIG.cooldownMinutes;
+    if (!(await beginWakeup(clerkUserId, cooldownMinutes, asBackgroundJob))) {
+      return skip("cooldown");
+    }
   }
 
   const models: string[] = config.selected_models ?? [];

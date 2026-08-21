@@ -91,8 +91,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ result });
   }
 
-  // Full wakeup for the current user (respects cooldown).
-  const cooldownRemaining = await getCooldownRemainingMs(userId);
+  // Full wakeup for the current user (respects cooldown). This is only a fast
+  // pre-check; the atomic gate in executeWakeup() is what actually enforces it.
+  const { data: cooldownConfig } = await (await createServerClient())
+    .from("wakeup_configs")
+    .select("cooldown_minutes")
+    .eq("clerk_user_id", userId)
+    .maybeSingle();
+  const cooldownMinutes =
+    cooldownConfig?.cooldown_minutes ?? DEFAULT_WAKEUP_CONFIG.cooldownMinutes;
+  const cooldownRemaining = await getCooldownRemainingMs(
+    userId,
+    false,
+    cooldownMinutes,
+  );
   if (cooldownRemaining > 0) {
     return NextResponse.json(
       {
