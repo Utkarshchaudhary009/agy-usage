@@ -7,7 +7,11 @@ import {
   unauthorized,
 } from "@/lib/api/accounts";
 import { createServerClient } from "@/lib/supabase/server";
-import { UUID_RE, WAKEUP_MODEL_IDS } from "@/lib/types/wakeup";
+import {
+  DEFAULT_WAKEUP_CONFIG,
+  UUID_RE,
+  WAKEUP_MODEL_IDS,
+} from "@/lib/types/wakeup";
 import { getCooldownRemainingMs } from "@/lib/wakeup/cooldown";
 import {
   executeWakeup,
@@ -79,8 +83,8 @@ export async function POST(req: NextRequest) {
     const result = await triggerSingleModel(
       body.accountId,
       body.modelId,
-      config?.custom_prompt ?? "hi",
-      config?.max_output_tokens ?? 1,
+      config?.custom_prompt ?? DEFAULT_WAKEUP_CONFIG.customPrompt,
+      config?.max_output_tokens ?? DEFAULT_WAKEUP_CONFIG.maxOutputTokens,
       { clerkUserId: userId, triggerSource: "manual" },
     );
 

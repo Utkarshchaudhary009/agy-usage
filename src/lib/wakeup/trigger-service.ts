@@ -7,6 +7,7 @@ import { resolveProjectId } from "@/lib/google/project-resolver";
 import { getValidAccessToken } from "@/lib/google/token-manager";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/types/database";
+import { DEFAULT_WAKEUP_CONFIG } from "@/lib/types/wakeup";
 import { isOnCooldown } from "./cooldown";
 
 export type TriggerSource = "manual" | "scheduled" | "quota_reset";
@@ -99,7 +100,7 @@ export async function triggerSingleModel(
   accountId: string,
   modelId: string,
   prompt: string,
-  maxOutputTokens: number | undefined,
+  maxOutputTokens: number = DEFAULT_WAKEUP_CONFIG.maxOutputTokens,
   context: TriggerContext,
 ): Promise<TriggerResult> {
   const startedAt = Date.now();
@@ -248,7 +249,7 @@ export async function executeWakeup(
 
   if (accountIds.length === 0) return skip("no_accounts");
 
-  const prompt = config.custom_prompt ?? "hi";
+  const prompt = config.custom_prompt ?? DEFAULT_WAKEUP_CONFIG.customPrompt;
   const context: TriggerContext = {
     clerkUserId,
     triggerSource,

@@ -1,6 +1,7 @@
 "use client";
 
 import { WAKEUP_MODEL_OPTIONS } from "@/lib/types/wakeup";
+import { cn } from "@/lib/utils";
 
 interface ModelSelectorProps {
   selectedModels: string[];
@@ -28,11 +29,13 @@ export function ModelSelector({
         return (
           <label
             key={option.id}
-            className={`flex items-center gap-3 rounded-lg border p-3 text-sm transition-colors ${
+            className={cn(
+              "flex items-center gap-3 rounded-lg border p-3 text-sm transition-colors",
               checked
                 ? "border-primary bg-primary/5"
-                : "border-input bg-background hover:bg-muted"
-            } ${disabled ? "opacity-50" : "cursor-pointer"}`}
+                : "border-input bg-background hover:bg-muted",
+              disabled ? "opacity-50" : "cursor-pointer",
+            )}
           >
             <input
               type="checkbox"

@@ -103,7 +103,7 @@ export function SchedulePicker({
           >
             Every
           </label>
-          <input
+          <Input
             id="interval-hours"
             type="number"
             min={1}
@@ -159,7 +159,6 @@ export function SchedulePicker({
         <div className="flex flex-col gap-2">
           <Input
             type="text"
-            inputMode="text"
             placeholder="0 */6 * * *"
             value={cronExpression}
             disabled={disabled}
