@@ -6,7 +6,8 @@ import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/types/database";
 
 // Used when no wakeup config exists yet so we still honour a sane default. The
-// atomic gate in `beginWakeup` also defaults to this when no row is supplied.
+// atomic gate in `begin_wakeup` also defaults to this when no row is supplied,
+// read server-side from `wakeup_configs`.
 const DEFAULT_COOLDOWN_MINUTES = 60;
 
 export interface CooldownStatus {
@@ -26,8 +27,13 @@ async function getClient(
  * Milliseconds remaining until the cooldown clears (0 when not on cooldown).
  *
  * Reads the authoritative boundary from `wakeup_cooldown_locks` (stamped
- * atomically by `beginWakeup`), not from `wakeup_logs`, so concurrent callers
- * never disagree about whether the cooldown is active.
+ * atomically by `begin_wakeup`), not from `wakeup_logs`, so concurrent callers
+ * never disagree about whether the cooldown is active. The cooldown duration is
+ * read server-side from the user's `wakeup_configs` row, so it cannot be
+ * bypassed by a caller-supplied value.
+ *
+ * Propagates RPC errors (instead of silently reporting "not on cooldown") so
+ * callers do not mistake an unavailable cooldown state for a cleared one.
  *
  * Defaults to the RLS-scoped server client so reads honour the caller's
  * identity. Pass `asBackgroundJob: true` (e.g. from an Inngest worker) to use
@@ -36,7 +42,6 @@ async function getClient(
 export async function getCooldownRemainingMs(
   clerkUserId: string,
   asBackgroundJob = false,
-  cooldownMinutes = DEFAULT_COOLDOWN_MINUTES,
 ): Promise<number> {
   const supabase = await getClient(asBackgroundJob);
 
@@ -44,13 +49,14 @@ export async function getCooldownRemainingMs(
     "get_wakeup_cooldown_remaining_ms",
     {
       p_clerk_user_id: clerkUserId,
-      p_cooldown_minutes: cooldownMinutes,
     },
   );
 
   if (error) {
     console.error("Failed to compute wakeup cooldown", error);
-    return 0;
+    // Fail open on the read would let a broken cooldown stampede the API; fail
+    // closed by surfacing the error so the caller can decide how to respond.
+    throw error;
   }
 
   return typeof data === "number" ? data : 0;
@@ -63,18 +69,17 @@ export async function getCooldownRemainingMs(
  *
  * This is the only correct gate: the check and the claim happen inside a single
  * Postgres transaction guarded by a per-user advisory lock, so two wakeups for
- * the same user can never both pass.
+ * the same user can never both pass. The cooldown duration is read server-side
+ * from `wakeup_configs`, so it cannot be bypassed by a caller-supplied value.
  */
 export async function beginWakeup(
   clerkUserId: string,
-  cooldownMinutes: number,
   asBackgroundJob = false,
 ): Promise<boolean> {
   const supabase = await getClient(asBackgroundJob);
 
   const { data, error } = await supabase.rpc("begin_wakeup", {
     p_clerk_user_id: clerkUserId,
-    p_cooldown_minutes: cooldownMinutes,
   });
 
   if (error) {
@@ -87,27 +92,32 @@ export async function beginWakeup(
   return data === true;
 }
 
-export async function isOnCooldown(
+// Reads the configured cooldown duration for a user. Propagates query errors so
+// a transient failure is not silently treated as "use the default 60 minutes".
+async function readCooldownMinutes(
+  supabase: SupabaseClient<Database>,
   clerkUserId: string,
-  asBackgroundJob = false,
-): Promise<boolean> {
-  const supabase = await getClient(asBackgroundJob);
-
-  const { data: config } = await supabase
+): Promise<number> {
+  const { data, error } = await supabase
     .from("wakeup_configs")
     .select("cooldown_minutes")
     .eq("clerk_user_id", clerkUserId)
     .maybeSingle();
 
-  const cooldownMinutes = config?.cooldown_minutes ?? DEFAULT_COOLDOWN_MINUTES;
+  if (error) {
+    throw error;
+  }
 
-  return (
-    (await getCooldownRemainingMs(
-      clerkUserId,
-      asBackgroundJob,
-      cooldownMinutes,
-    )) > 0
-  );
+  return data?.cooldown_minutes ?? DEFAULT_COOLDOWN_MINUTES;
+}
+
+export async function isOnCooldown(
+  clerkUserId: string,
+  asBackgroundJob = false,
+): Promise<boolean> {
+  const supabase = await getClient(asBackgroundJob);
+  await readCooldownMinutes(supabase, clerkUserId);
+  return (await getCooldownRemainingMs(clerkUserId, asBackgroundJob)) > 0;
 }
 
 /**
@@ -120,17 +130,10 @@ export async function getCooldownStatus(
 ): Promise<CooldownStatus> {
   const supabase = await getClient(asBackgroundJob);
 
-  const { data: config } = await supabase
-    .from("wakeup_configs")
-    .select("cooldown_minutes")
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
-
-  const cooldownMinutes = config?.cooldown_minutes ?? DEFAULT_COOLDOWN_MINUTES;
+  const cooldownMinutes = await readCooldownMinutes(supabase, clerkUserId);
   const remainingMs = await getCooldownRemainingMs(
     clerkUserId,
     asBackgroundJob,
-    cooldownMinutes,
   );
 
   const now = Date.now();

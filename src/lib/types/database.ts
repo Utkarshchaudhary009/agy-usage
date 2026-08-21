@@ -402,14 +402,12 @@ export interface Database {
       begin_wakeup: {
         Args: {
           p_clerk_user_id: string;
-          p_cooldown_minutes: number;
         };
         Returns: boolean;
       };
       get_wakeup_cooldown_remaining_ms: {
         Args: {
           p_clerk_user_id: string;
-          p_cooldown_minutes: number;
         };
         Returns: number;
       };

@@ -50,7 +50,13 @@ function parseCronField(
     if (range === "*") {
       for (let i = min; i <= max; i += step) result.add(i);
     } else if (range.includes("-")) {
-      const [aText, bText] = range.split("-");
+      // Require exactly two non-empty endpoints so malformed syntax like "--"
+      // or "1-2-3" is rejected rather than silently parsed.
+      const rangeParts = range.split("-");
+      if (rangeParts.length !== 2 || rangeParts.some((p) => p.length === 0)) {
+        return null;
+      }
+      const [aText, bText] = rangeParts;
       const a = Number(aText);
       const b = Number(bText);
       if (
@@ -66,7 +72,12 @@ function parseCronField(
     } else {
       const n = Number(range);
       if (!isInteger(n) || !inRange(n, min, max)) return null;
-      result.add(n);
+      // A stepped singleton such as "5/15" expands from n through max.
+      if (step > 1) {
+        for (let i = n; i <= max; i += step) result.add(i);
+      } else {
+        result.add(n);
+      }
     }
   }
 
@@ -109,6 +120,7 @@ export function nextCronRun(
   const doms = domRestricted ? parseCronField(domField, 1, 31) : null;
 
   const dowField = fields[4];
+  const dowRestricted = dowField !== "*" && dowField !== "?";
   const dowSet = new Set<number>();
   const dowParsed = parseCronField(dowField === "?" ? "*" : dowField, 0, 7);
   if (!dowParsed) return null;
@@ -131,12 +143,18 @@ export function nextCronRun(
 
     const dayOfMonth = cursor.getDate();
     const dayOfWeek = cursor.getDay();
+    // The OR rule (day-of-month OR day-of-week) only applies when BOTH day
+    // fields are actually restricted. When only one is restricted, the other is
+    // a wildcard and must not force a match on every date (e.g. "0 0 15 * *"
+    // should run only on the 15th).
     const dayMatches =
-      doms && dowSet.size > 0
+      doms && dowRestricted
         ? doms.has(dayOfMonth) || dowSet.has(dayOfWeek)
         : doms
           ? doms.has(dayOfMonth)
-          : dowSet.has(dayOfWeek);
+          : dowRestricted
+            ? dowSet.has(dayOfWeek)
+            : true;
     if (!dayMatches) {
       cursor.setDate(cursor.getDate() + 1);
       cursor.setHours(0, 0, 0, 0);

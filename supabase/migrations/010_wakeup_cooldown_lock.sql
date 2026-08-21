@@ -35,15 +35,20 @@ REVOKE ALL ON public.wakeup_cooldown_locks FROM anon, authenticated;
 -- Milliseconds remaining until the cooldown clears (0 when not on cooldown).
 -- The boundary is the lock row's last_trigger_at, so it reflects the moment a
 -- wakeup was *initiated*, not when it finished -- a deliberately stricter view.
-CREATE OR REPLACE FUNCTION public.get_wakeup_cooldown_remaining_ms(
-  p_clerk_user_id    TEXT,
-  p_cooldown_minutes INTEGER
+-- The cooldown duration is read server-side from the user's `wakeup_configs`
+-- row rather than accepted as a parameter. A caller-supplied value could be 0 or
+-- NULL to never be placed on cooldown and defeat the throttle this gate exists
+-- to enforce.
+DROP FUNCTION IF EXISTS public.get_wakeup_cooldown_remaining_ms(TEXT, INTEGER);
+CREATE FUNCTION public.get_wakeup_cooldown_remaining_ms(
+  p_clerk_user_id    TEXT
 ) RETURNS INTEGER
 SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
   v_last      TIMESTAMPTZ;
+  v_cooldown  INTEGER;
   v_remaining NUMERIC;
 BEGIN
   IF p_clerk_user_id IS NULL THEN
@@ -59,6 +64,11 @@ BEGIN
     END IF;
   END IF;
 
+  SELECT cooldown_minutes INTO v_cooldown
+  FROM public.wakeup_configs
+  WHERE clerk_user_id = p_clerk_user_id;
+  v_cooldown := COALESCE(v_cooldown, 60);
+
   SELECT last_trigger_at INTO v_last
   FROM public.wakeup_cooldown_locks
   WHERE clerk_user_id = p_clerk_user_id;
@@ -68,25 +78,27 @@ BEGIN
   END IF;
 
   v_remaining := extract(epoch FROM (
-    v_last + make_interval(mins => p_cooldown_minutes) - NOW()
+    v_last + make_interval(mins => v_cooldown) - NOW()
   )) * 1000;
 
   RETURN GREATEST(0, v_remaining::INTEGER);
 END;
 $$ LANGUAGE plpgsql;
 
--- Atomically check the cooldown and, if clear, claim the slot by stamping
--- last_trigger_at = now(). Returns true when the wakeup may proceed and false
--- when it is still on cooldown. A false return means the caller MUST NOT fire.
-CREATE OR REPLACE FUNCTION public.begin_wakeup(
-  p_clerk_user_id    TEXT,
-  p_cooldown_minutes INTEGER
+-- The cooldown duration is read server-side from the user's `wakeup_configs`
+-- row (see note on get_wakeup_cooldown_remaining_ms). The function is SECURITY
+-- DEFINER so it can read the authoritative value even though direct access to the
+-- config is RLS-scoped; it never trusts a caller-supplied parameter.
+DROP FUNCTION IF EXISTS public.begin_wakeup(TEXT, INTEGER);
+CREATE FUNCTION public.begin_wakeup(
+  p_clerk_user_id    TEXT
 ) RETURNS BOOLEAN
 SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
   v_last TIMESTAMPTZ;
+  v_cooldown INTEGER;
 BEGIN
   IF p_clerk_user_id IS NULL THEN
     RAISE EXCEPTION 'Missing user id';
@@ -98,6 +110,11 @@ BEGIN
       RAISE EXCEPTION 'Not authorized';
     END IF;
   END IF;
+
+  SELECT cooldown_minutes INTO v_cooldown
+  FROM public.wakeup_configs
+  WHERE clerk_user_id = p_clerk_user_id;
+  v_cooldown := COALESCE(v_cooldown, 60);
 
   -- Serialize the cooldown check + claim for this user. Never held while the
   -- (slow) external Cloud Code call runs -- only across the read + stamp below.
@@ -111,7 +128,7 @@ BEGIN
   WHERE clerk_user_id = p_clerk_user_id;
 
   IF v_last IS NOT NULL
-     AND v_last + make_interval(mins => p_cooldown_minutes) > NOW() THEN
+     AND v_last + make_interval(mins => v_cooldown) > NOW() THEN
     RETURN false;
   END IF;
 
@@ -124,12 +141,21 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-REVOKE ALL ON FUNCTION public.get_wakeup_cooldown_remaining_ms(TEXT, INTEGER)
+-- Backfill the cooldown lock from each user's most recent wakeup log so the first
+-- wakeup after this migration still respects any recent trigger window, instead
+-- of ignoring a recent log entry and firing inside the old cooldown.
+INSERT INTO public.wakeup_cooldown_locks (clerk_user_id, last_trigger_at)
+SELECT clerk_user_id, MAX(created_at)
+FROM public.wakeup_logs
+GROUP BY clerk_user_id
+ON CONFLICT (clerk_user_id) DO NOTHING;
+
+REVOKE ALL ON FUNCTION public.get_wakeup_cooldown_remaining_ms(TEXT)
   FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.get_wakeup_cooldown_remaining_ms(TEXT, INTEGER)
+GRANT EXECUTE ON FUNCTION public.get_wakeup_cooldown_remaining_ms(TEXT)
   TO authenticated, service_role;
 
-REVOKE ALL ON FUNCTION public.begin_wakeup(TEXT, INTEGER)
+REVOKE ALL ON FUNCTION public.begin_wakeup(TEXT)
   FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.begin_wakeup(TEXT, INTEGER)
+GRANT EXECUTE ON FUNCTION public.begin_wakeup(TEXT)
   TO authenticated, service_role;

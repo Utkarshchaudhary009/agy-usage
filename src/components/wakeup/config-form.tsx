@@ -37,6 +37,12 @@ export function ConfigForm({ config, accounts }: ConfigFormProps) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
+  // Re-sync local form state whenever the incoming config changes (e.g. after an
+  // external refetch or a successful save returns an updated config).
+  useEffect(() => {
+    setForm(config);
+  }, [config]);
+
   function update(partial: Partial<WakeupConfig>) {
     setForm((prev) => ({ ...prev, ...partial }));
   }
@@ -149,6 +155,8 @@ export function ConfigForm({ config, accounts }: ConfigFormProps) {
               <div className="grid gap-2 sm:grid-cols-2">
                 {accounts.map((account) => {
                   const checked = form.selectedAccountIds.includes(account.id);
+                  const usable =
+                    account.isActive && account.tokenStatus === "active";
                   return (
                     <label
                       key={account.id}
@@ -157,6 +165,7 @@ export function ConfigForm({ config, accounts }: ConfigFormProps) {
                         checked
                           ? "border-primary bg-primary/5"
                           : "border-input bg-background hover:bg-muted",
+                        !usable && "opacity-60",
                         isSaving && "opacity-50",
                       )}
                     >
@@ -164,12 +173,28 @@ export function ConfigForm({ config, accounts }: ConfigFormProps) {
                         type="checkbox"
                         className="size-4 rounded border-input accent-primary"
                         checked={checked}
-                        disabled={isSaving}
+                        disabled={isSaving || !usable}
                         onChange={(event) =>
                           toggleAccount(account.id, event.target.checked)
                         }
                       />
-                      <span className="truncate">{account.email}</span>
+                      <span className="flex flex-col">
+                        <span className="truncate">{account.email}</span>
+                        {account.displayName && (
+                          <span className="truncate text-xs text-muted-foreground">
+                            {account.displayName}
+                          </span>
+                        )}
+                      </span>
+                      {!usable && (
+                        <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                          {account.tokenStatus === "revoked"
+                            ? "Revoked"
+                            : account.tokenStatus === "expired"
+                              ? "Expired"
+                              : "Inactive"}
+                        </span>
+                      )}
                     </label>
                   );
                 })}

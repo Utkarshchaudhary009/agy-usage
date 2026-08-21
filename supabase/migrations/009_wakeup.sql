@@ -1,24 +1,35 @@
 -- Wakeup configuration and trigger logs.
 -- Phase 14: Wakeup Configuration UI & Storage.
 
+-- Allowed model IDs for wakeup. Enforced at the DB layer so a client cannot
+-- bypass the API validator (which filters to this same set) and store an
+-- arbitrary model ID.
 CREATE TABLE public.wakeup_configs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   clerk_user_id TEXT NOT NULL UNIQUE,
-  enabled BOOLEAN DEFAULT false,
-  selected_models TEXT[] DEFAULT '{claude-sonnet-4-5,gemini-3-flash,gemini-3-pro-low}',
-  selected_account_ids UUID[] DEFAULT '{}',
-  schedule_mode TEXT DEFAULT 'interval'
+  enabled BOOLEAN NOT NULL DEFAULT false,
+  selected_models TEXT[] NOT NULL
+    DEFAULT '{claude-sonnet-4-5,gemini-3-flash,gemini-3-pro-low}'
+    CHECK (
+      selected_models <@ ARRAY[
+        'claude-sonnet-4-5',
+        'gemini-3-flash',
+        'gemini-3-pro-low'
+      ]::text[]
+    ),
+  selected_account_ids UUID[] NOT NULL DEFAULT '{}',
+  schedule_mode TEXT NOT NULL DEFAULT 'interval'
     CHECK (schedule_mode IN ('interval', 'daily', 'custom')),
-  interval_hours INTEGER DEFAULT 6
+  interval_hours INTEGER NOT NULL DEFAULT 6
     CHECK (interval_hours >= 1 AND interval_hours <= 168),
-  daily_times TEXT[] DEFAULT '{09:00,15:00,21:00}',
+  daily_times TEXT[] NOT NULL DEFAULT '{09:00,15:00,21:00}',
   cron_expression TEXT,
-  custom_prompt TEXT DEFAULT 'hi',
-  max_output_tokens INTEGER DEFAULT 1
+  custom_prompt TEXT NOT NULL DEFAULT 'hi',
+  max_output_tokens INTEGER NOT NULL DEFAULT 1
     CHECK (max_output_tokens >= 1 AND max_output_tokens <= 8192),
-  cooldown_minutes INTEGER DEFAULT 60
+  cooldown_minutes INTEGER NOT NULL DEFAULT 60
     CHECK (cooldown_minutes >= 0 AND cooldown_minutes <= 1440),
-  wake_on_reset BOOLEAN DEFAULT false,
+  wake_on_reset BOOLEAN NOT NULL DEFAULT false,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 

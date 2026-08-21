@@ -27,8 +27,19 @@ async function WakeupLoader({ userId }: { userId: string }) {
       .order("added_at", { ascending: true }),
   ]);
 
+  // A query failure must not be silently treated as "no config / no accounts":
+  // doing so would let a transient read error overwrite the user's persisted
+  // configuration with defaults on save, or let them save against incomplete
+  // account data. Surface the error instead.
   if (configResult.error) {
-    console.error("Failed to load wakeup config:", configResult.error);
+    throw new Error(
+      `Failed to load wakeup configuration: ${configResult.error.message}`,
+    );
+  }
+  if (accountsResult.error) {
+    throw new Error(
+      `Failed to load linked accounts: ${accountsResult.error.message}`,
+    );
   }
 
   const config: WakeupConfig = configResult.data

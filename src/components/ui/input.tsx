@@ -34,6 +34,8 @@ function NumericInput({
   value,
   onValueChange,
   className,
+  min,
+  max,
   ...props
 }: NumericInputProps) {
   const [draft, setDraft] = useState(String(value));
@@ -42,21 +44,52 @@ function NumericInput({
     setDraft(String(value));
   }, [value]);
 
+  const numericMin =
+    min == null
+      ? undefined
+      : typeof min === "number"
+        ? min
+        : Number.isFinite(Number(min))
+          ? Number(min)
+          : undefined;
+  const numericMax =
+    max == null
+      ? undefined
+      : typeof max === "number"
+        ? max
+        : Number.isFinite(Number(max))
+          ? Number(max)
+          : undefined;
+
   return (
     <input
       type="number"
       data-slot="input"
       className={cn(INPUT_CLASS_NAME, className)}
       value={draft}
+      min={min}
+      max={max}
       onChange={(event) => {
         const raw = event.target.value;
         setDraft(raw);
         if (raw !== "") {
           const parsed = Number(raw);
-          if (Number.isFinite(parsed)) onValueChange(parsed);
+          if (Number.isFinite(parsed)) {
+            let next = parsed;
+            if (numericMin !== undefined && next < numericMin) {
+              next = numericMin;
+            }
+            if (numericMax !== undefined && next > numericMax) {
+              next = numericMax;
+            }
+            onValueChange(next);
+          }
         }
       }}
-      onBlur={() => setDraft(String(value))}
+      onBlur={(event) => {
+        setDraft(String(value));
+        props.onBlur?.(event);
+      }}
       {...props}
     />
   );

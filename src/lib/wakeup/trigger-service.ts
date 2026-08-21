@@ -211,39 +211,43 @@ export async function executeWakeup(
     failureCount: 0,
   });
 
-  const { data: config } = await supabase
+  const configResult = await supabase
     .from("wakeup_configs")
     .select(
-      "enabled, selected_models, selected_account_ids, custom_prompt, max_output_tokens, cooldown_minutes",
+      "enabled, selected_models, selected_account_ids, custom_prompt, max_output_tokens",
     )
     .eq("clerk_user_id", clerkUserId)
     .maybeSingle();
 
+  if (configResult.error) {
+    // A query failure is not "no config" — surface it so the caller (and any
+    // retry/alerting) knows the wakeup did not actually run.
+    throw new Error(
+      `Failed to load wakeup config: ${configResult.error.message}`,
+    );
+  }
+
+  const config = configResult.data;
   if (!config) return skip("no_config");
   if (!config.enabled) return skip("disabled");
-
-  if (!options?.bypassCooldown) {
-    // Atomic check-and-claim: under a per-user advisory lock this stamps the
-    // cooldown boundary, so a concurrent wakeup (manual click vs scheduled job,
-    // or two Inngest workers) cannot also pass the gate and stampede the API.
-    // A false return means the cooldown is still active and we must not fire.
-    const cooldownMinutes =
-      config.cooldown_minutes ?? DEFAULT_WAKEUP_CONFIG.cooldownMinutes;
-    if (!(await beginWakeup(clerkUserId, cooldownMinutes, asBackgroundJob))) {
-      return skip("cooldown");
-    }
-  }
 
   const models: string[] = config.selected_models ?? [];
   if (models.length === 0) return skip("no_models");
 
-  const { data: accounts } = await supabase
+  const accountsResult = await supabase
     .from("google_accounts")
     .select("id")
     .eq("clerk_user_id", clerkUserId)
     .eq("token_status", "active");
 
-  if (!accounts || accounts.length === 0) return skip("no_accounts");
+  if (accountsResult.error) {
+    throw new Error(
+      `Failed to load google accounts: ${accountsResult.error.message}`,
+    );
+  }
+
+  const accounts = accountsResult.data ?? [];
+  if (accounts.length === 0) return skip("no_accounts");
 
   const selected = config.selected_account_ids ?? [];
   const selectedSet = new Set(selected);
@@ -253,6 +257,18 @@ export async function executeWakeup(
       : accounts.map((a) => a.id);
 
   if (accountIds.length === 0) return skip("no_accounts");
+
+  if (!options?.bypassCooldown) {
+    // Atomic check-and-claim: under a per-user advisory lock this stamps the
+    // cooldown boundary, so a concurrent wakeup (manual click vs scheduled job,
+    // or two Inngest workers) cannot also pass the gate and stampede the API.
+    // A false return means the cooldown is still active and we must not fire.
+    // This is claimed only after we know the wakeup will actually trigger at
+    // least one model/account, so an empty config cannot consume the cooldown.
+    if (!(await beginWakeup(clerkUserId, asBackgroundJob))) {
+      return skip("cooldown");
+    }
+  }
 
   const prompt = config.custom_prompt ?? DEFAULT_WAKEUP_CONFIG.customPrompt;
   const context: TriggerContext = {

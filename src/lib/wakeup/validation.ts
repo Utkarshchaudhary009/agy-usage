@@ -27,10 +27,19 @@ function asStringArray(value: unknown): string[] {
 }
 
 function clampInt(value: unknown, min: number, max: number): number | null {
+  // Only whole numbers are accepted. A fractional or coercible string (e.g.
+  // "1.5" or "1.0") must be rejected rather than silently floored, otherwise
+  // the stored setting silently differs from what the user entered.
+  if (
+    (typeof value !== "number" && typeof value !== "string") ||
+    (typeof value === "string" && value.trim() === "")
+  ) {
+    return null;
+  }
   const number = Number(value);
-  if (!Number.isFinite(number)) return null;
+  if (!Number.isFinite(number) || !Number.isInteger(number)) return null;
   if (number < min || number > max) return null;
-  return Math.floor(number);
+  return number;
 }
 
 // Validates and normalizes an untrusted payload into a complete WakeupConfig.
@@ -45,8 +54,8 @@ export function validateWakeupConfig(input: unknown): ValidationResult {
 
   config.enabled = raw.enabled === true;
 
-  const selectedModels = asStringArray(raw.selectedModels).filter((model) =>
-    WAKEUP_MODEL_IDS.includes(model),
+  const selectedModels = [...new Set(asStringArray(raw.selectedModels))].filter(
+    (model) => WAKEUP_MODEL_IDS.includes(model),
   );
   if (selectedModels.length === 0) {
     return {

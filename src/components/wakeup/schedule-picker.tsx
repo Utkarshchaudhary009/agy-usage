@@ -70,6 +70,7 @@ export function SchedulePicker({
             type="button"
             disabled={disabled}
             onClick={() => onModeChange(mode.value)}
+            aria-pressed={scheduleMode === mode.value}
             className={cn(
               "flex flex-col items-start rounded-lg border p-3 text-left transition-colors",
               scheduleMode === mode.value
@@ -99,7 +100,11 @@ export function SchedulePicker({
             className="w-24"
             value={intervalHours}
             disabled={disabled}
-            onValueChange={onIntervalChange}
+            onValueChange={(hours) => {
+              if (Number.isInteger(hours) && hours >= 1 && hours <= 168) {
+                onIntervalChange(hours);
+              }
+            }}
           />
           <span className="text-sm text-muted-foreground">hours</span>
         </div>
@@ -107,13 +112,14 @@ export function SchedulePicker({
 
       {scheduleMode === "daily" && (
         <div className="flex flex-col gap-2">
-          {entries.map((entry) => (
+          {entries.map((entry, index) => (
             <div key={entry.id} className="flex items-center gap-2">
               <Input
                 type="time"
                 className="w-40"
                 value={entry.time}
                 disabled={disabled}
+                aria-label={`Wakeup time ${index + 1}`}
                 onChange={(event) =>
                   updateDailyTime(entry.id, event.target.value)
                 }
@@ -150,6 +156,7 @@ export function SchedulePicker({
             placeholder="0 */6 * * *"
             value={cronExpression}
             disabled={disabled}
+            aria-label="Cron expression"
             onChange={(event) => onCronChange(event.target.value)}
           />
           <p className="text-xs text-muted-foreground">
