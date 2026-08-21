@@ -7,15 +7,12 @@ import {
   unauthorized,
 } from "@/lib/api/accounts";
 import { createServerClient } from "@/lib/supabase/server";
-import { WAKEUP_MODEL_IDS } from "@/lib/types/wakeup";
+import { UUID_RE, WAKEUP_MODEL_IDS } from "@/lib/types/wakeup";
 import { getCooldownRemainingMs } from "@/lib/wakeup/cooldown";
 import {
   executeWakeup,
   triggerSingleModel,
 } from "@/lib/wakeup/trigger-service";
-
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type TriggerBody = {
   accountId?: string;

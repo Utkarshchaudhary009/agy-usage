@@ -221,7 +221,10 @@ export async function executeWakeup(
   if (!config) return skip("no_config");
   if (!config.enabled) return skip("disabled");
 
-  if (!options?.bypassCooldown && (await isOnCooldown(clerkUserId))) {
+  if (
+    !options?.bypassCooldown &&
+    (await isOnCooldown(clerkUserId, asBackgroundJob))
+  ) {
     return skip("cooldown");
   }
 

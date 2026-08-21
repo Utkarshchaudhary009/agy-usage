@@ -3,6 +3,7 @@
 import { Plus, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import type { ScheduleMode } from "@/lib/types/wakeup";
 import { cn } from "@/lib/utils";
 
@@ -14,9 +15,6 @@ interface DailyTimeEntry {
 function makeId(): string {
   return Math.random().toString(36).slice(2);
 }
-
-const inputClass =
-  "flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
 
 const MODES: { value: ScheduleMode; label: string; hint: string }[] = [
   { value: "interval", label: "Interval", hint: "Every N hours" },
@@ -110,7 +108,7 @@ export function SchedulePicker({
             type="number"
             min={1}
             max={168}
-            className={cn(inputClass, "w-24")}
+            className="w-24"
             value={intervalHours}
             disabled={disabled}
             onChange={(event) => onIntervalChange(Number(event.target.value))}
@@ -123,9 +121,9 @@ export function SchedulePicker({
         <div className="flex flex-col gap-2">
           {entries.map((entry) => (
             <div key={entry.id} className="flex items-center gap-2">
-              <input
+              <Input
                 type="time"
-                className={cn(inputClass, "w-40")}
+                className="w-40"
                 value={entry.time}
                 disabled={disabled}
                 onChange={(event) =>
@@ -159,11 +157,10 @@ export function SchedulePicker({
 
       {scheduleMode === "custom" && (
         <div className="flex flex-col gap-2">
-          <input
+          <Input
             type="text"
             inputMode="text"
             placeholder="0 */6 * * *"
-            className={inputClass}
             value={cronExpression}
             disabled={disabled}
             onChange={(event) => onCronChange(event.target.value)}

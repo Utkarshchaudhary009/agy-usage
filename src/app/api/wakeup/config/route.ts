@@ -1,35 +1,14 @@
 import { auth } from "@clerk/nextjs/server";
 import { type NextRequest, NextResponse } from "next/server";
+import { errorJson, internalError, unauthorized } from "@/lib/api/accounts";
 import { createServerClient } from "@/lib/supabase/server";
 import type { WakeupConfig } from "@/lib/types/wakeup";
 import { DEFAULT_WAKEUP_CONFIG } from "@/lib/types/wakeup";
 import {
   dbRowToWakeupConfig,
   validateWakeupConfig,
+  WAKEUP_CONFIG_SELECT,
 } from "@/lib/wakeup/validation";
-
-function unauthorized() {
-  return NextResponse.json(
-    {
-      error: "Unauthorized",
-      code: "UNAUTHORIZED",
-      message: "You must be logged in to manage wakeup settings.",
-    },
-    { status: 401 },
-  );
-}
-
-function internalError(cause?: unknown) {
-  console.error("Failed to manage wakeup config:", cause);
-  return NextResponse.json(
-    {
-      error: "Internal Server Error",
-      code: "INTERNAL_ERROR",
-      message: "Failed to manage wakeup settings",
-    },
-    { status: 500 },
-  );
-}
 
 export async function GET() {
   const { userId } = await auth();
@@ -38,13 +17,11 @@ export async function GET() {
   const supabase = await createServerClient();
   const { data, error } = await supabase
     .from("wakeup_configs")
-    .select(
-      "enabled, selected_models, selected_account_ids, schedule_mode, interval_hours, daily_times, cron_expression, custom_prompt, max_output_tokens, cooldown_minutes, wake_on_reset",
-    )
+    .select(WAKEUP_CONFIG_SELECT)
     .eq("clerk_user_id", userId)
     .maybeSingle();
 
-  if (error) return internalError(error);
+  if (error) return internalError("load wakeup config", error);
 
   const config: WakeupConfig = data
     ? dbRowToWakeupConfig(data)
@@ -61,26 +38,26 @@ export async function PUT(req: NextRequest) {
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json(
+    return errorJson(
       {
         error: "Bad Request",
         code: "INVALID_JSON",
         message: "Request body must be valid JSON.",
       },
-      { status: 400 },
+      400,
     );
   }
 
   const result = validateWakeupConfig(body);
   if (!result.ok) {
-    return NextResponse.json(
+    return errorJson(
       {
         error: "Validation Error",
         code: "VALIDATION_ERROR",
         message: result.error,
         field: result.field,
       },
-      { status: 400 },
+      400,
     );
   }
 
@@ -105,7 +82,7 @@ export async function PUT(req: NextRequest) {
     { onConflict: "clerk_user_id" },
   );
 
-  if (error) return internalError(error);
+  if (error) return internalError("save wakeup config", error);
 
   return NextResponse.json({ success: true, config });
 }

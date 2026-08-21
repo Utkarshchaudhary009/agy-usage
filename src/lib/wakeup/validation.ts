@@ -1,13 +1,21 @@
 import "server-only";
 
 import type { ScheduleMode, WakeupConfig } from "@/lib/types/wakeup";
-import { DEFAULT_WAKEUP_CONFIG, WAKEUP_MODEL_IDS } from "@/lib/types/wakeup";
+import {
+  DEFAULT_WAKEUP_CONFIG,
+  UUID_RE,
+  WAKEUP_MODEL_IDS,
+} from "@/lib/types/wakeup";
 import { DAILY_TIME_RE, isValidCronExpression } from "./schedule";
 
 const SCHEDULE_MODES: ScheduleMode[] = ["interval", "daily", "custom"];
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Columns selected when reading a wakeup config. Kept in one place so the page
+// loader, the GET route, and dbRowToWakeupConfig never drift apart. Defined as a
+// string-literal (not a runtime-built string) so supabase-js can still infer the
+// row shape from the `.select()` argument.
+export const WAKEUP_CONFIG_SELECT =
+  "enabled, selected_models, selected_account_ids, schedule_mode, interval_hours, daily_times, cron_expression, custom_prompt, max_output_tokens, cooldown_minutes, wake_on_reset";
 
 export type ValidationResult =
   | { ok: true; config: WakeupConfig }

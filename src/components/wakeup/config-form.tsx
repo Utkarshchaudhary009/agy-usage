@@ -11,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import type {
   ScheduleMode,
   WakeupAccountOption,
@@ -20,9 +21,6 @@ import { cn } from "@/lib/utils";
 import { isValidCronExpression, nextTriggerTime } from "@/lib/wakeup/schedule";
 import { ModelSelector } from "./model-selector";
 import { SchedulePicker } from "./schedule-picker";
-
-const inputClass =
-  "flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
 
 interface ConfigFormProps {
   config: WakeupConfig;
@@ -207,13 +205,13 @@ export function ConfigForm({ config, accounts }: ConfigFormProps) {
           <section className="flex flex-col gap-3">
             <h3 className="text-sm font-semibold">Trigger options</h3>
             <div className="grid gap-4 sm:grid-cols-2">
-              <label className="flex flex-col gap-1">
+              <label className="flex flex-col gap-1" htmlFor="wakeup-prompt">
                 <span className="text-xs font-medium text-muted-foreground">
                   Prompt
                 </span>
-                <input
+                <Input
+                  id="wakeup-prompt"
                   type="text"
-                  className={inputClass}
                   value={form.customPrompt}
                   disabled={isSaving}
                   maxLength={2000}
@@ -222,15 +220,18 @@ export function ConfigForm({ config, accounts }: ConfigFormProps) {
                   }
                 />
               </label>
-              <label className="flex flex-col gap-1">
+              <label
+                className="flex flex-col gap-1"
+                htmlFor="wakeup-max-output-tokens"
+              >
                 <span className="text-xs font-medium text-muted-foreground">
                   Max output tokens
                 </span>
-                <input
+                <Input
+                  id="wakeup-max-output-tokens"
                   type="number"
                   min={1}
                   max={8192}
-                  className={inputClass}
                   value={form.maxOutputTokens}
                   disabled={isSaving}
                   onChange={(event) =>
@@ -238,15 +239,18 @@ export function ConfigForm({ config, accounts }: ConfigFormProps) {
                   }
                 />
               </label>
-              <label className="flex flex-col gap-1">
+              <label
+                className="flex flex-col gap-1"
+                htmlFor="wakeup-cooldown-minutes"
+              >
                 <span className="text-xs font-medium text-muted-foreground">
                   Cooldown (minutes)
                 </span>
-                <input
+                <Input
+                  id="wakeup-cooldown-minutes"
                   type="number"
                   min={0}
                   max={1440}
-                  className={inputClass}
                   value={form.cooldownMinutes}
                   disabled={isSaving}
                   onChange={(event) =>

@@ -9,6 +9,8 @@ export interface ApiErrorBody {
   error: string;
   code: string;
   message: string;
+  /** Optional field name for validation errors. */
+  field?: string;
 }
 
 // PGRST116 = no rows matched, either because the row does not exist or RLS

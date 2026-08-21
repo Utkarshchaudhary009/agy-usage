@@ -6,7 +6,10 @@ import { ConfigForm } from "@/components/wakeup/config-form";
 import { createServerClient } from "@/lib/supabase/server";
 import type { WakeupAccountOption, WakeupConfig } from "@/lib/types/wakeup";
 import { DEFAULT_WAKEUP_CONFIG } from "@/lib/types/wakeup";
-import { dbRowToWakeupConfig } from "@/lib/wakeup/validation";
+import {
+  dbRowToWakeupConfig,
+  WAKEUP_CONFIG_SELECT,
+} from "@/lib/wakeup/validation";
 
 async function WakeupLoader({ userId }: { userId: string }) {
   const supabase = await createServerClient();
@@ -14,9 +17,7 @@ async function WakeupLoader({ userId }: { userId: string }) {
   const [configResult, accountsResult] = await Promise.all([
     supabase
       .from("wakeup_configs")
-      .select(
-        "enabled, selected_models, selected_account_ids, schedule_mode, interval_hours, daily_times, cron_expression, custom_prompt, max_output_tokens, cooldown_minutes, wake_on_reset",
-      )
+      .select(WAKEUP_CONFIG_SELECT)
       .eq("clerk_user_id", userId)
       .maybeSingle(),
     supabase
