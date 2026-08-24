@@ -79,6 +79,41 @@ export async function POST(req: NextRequest) {
 
       const config = await getWakeupConfig(supabase, userId);
 
+      // A disabled config must never fire, even for an explicit single-model
+      // request (mirrors executeWakeup, which also refuses disabled configs).
+      if (config && !config.enabled) {
+        return NextResponse.json({
+          clerkUserId: userId,
+          results: [],
+          skipped: true,
+          skipReason: "Wakeup not enabled",
+        });
+      }
+
+      // This single-model trigger performs the same upstream work as a
+      // scheduled wakeup, so it must participate in the same cooldown
+      // mutual-exclusion. Without this claim, a manual single trigger racing
+      // the scheduled Inngest run — or another manual trigger — could fire the
+      // same (account, model) concurrently against Google. The claim also
+      // refuses a disabled config atomically, closing the read/claim TOCTOU.
+      const { data: claimed, error: claimError } = await supabase.rpc(
+        "claim_wakeup_run",
+        { p_clerk_user_id: userId },
+      );
+
+      if (claimError) {
+        return internalError("claim wakeup run", claimError);
+      }
+
+      if (!claimed) {
+        return NextResponse.json({
+          clerkUserId: userId,
+          results: [],
+          skipped: true,
+          skipReason: "On cooldown",
+        });
+      }
+
       const result = await triggerSingleModel(
         body.accountId,
         body.modelId,

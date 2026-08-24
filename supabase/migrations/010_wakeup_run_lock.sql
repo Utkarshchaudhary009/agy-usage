@@ -27,12 +27,16 @@ REVOKE UPDATE (last_run_started_at) ON public.wakeup_configs FROM authenticated,
 -- Atomically claim the cooldown window for a user.
 --
 -- Returns true (and stamps last_run_started_at = NOW()) iff no run has started
--- within the row's own cooldown_minutes. Two concurrent callers serialize on the
--- row lock, so exactly one wins; the other sees the freshly stamped timestamp and
--- returns false. SECURITY DEFINER keeps the claim working under the service-role
--- client used by background jobs and lets it write a column that `authenticated`
--- has no privilege on, while the ownership check below still scopes a user-scoped
--- caller strictly to its own row.
+-- within the row's own cooldown_minutes AND the config is still enabled. Two
+-- concurrent callers serialize on the row lock, so exactly one wins; the other
+-- sees the freshly stamped timestamp and returns false. Checking `enabled`
+-- inside the same atomic UPDATE — rather than relying on the caller's earlier
+-- `SELECT` — closes the TOCTOU where a user disables their wakeup between the
+-- read and the claim and would otherwise still get a run. SECURITY DEFINER keeps
+-- the claim working under the service-role client used by background jobs and
+-- lets it write a column that `authenticated` has no privilege on, while the
+-- ownership check below still scopes a user-scoped caller strictly to its own
+-- row.
 CREATE OR REPLACE FUNCTION public.claim_wakeup_run(p_clerk_user_id text)
 RETURNS boolean
 LANGUAGE plpgsql
@@ -57,9 +61,14 @@ BEGIN
   -- make_interval() over string concatenation: `(cooldown_minutes || ' minutes')`
   -- silently produces NULL for a NULL input, and a NULL comparison would make the
   -- predicate unsatisfiable, permanently wedging the account.
+  -- `enabled = true` is part of the same atomic predicate (not a separate
+  -- caller-side check) so a config disabled concurrently with a dispatch is
+  -- honored: the UPDATE affects zero rows and the caller is skipped instead of
+  -- firing a run the user just turned off.
   UPDATE public.wakeup_configs
   SET last_run_started_at = NOW()
   WHERE clerk_user_id = p_clerk_user_id
+    AND enabled = true
     AND (
       last_run_started_at IS NULL
       OR last_run_started_at <= NOW() - make_interval(mins => cooldown_minutes)
