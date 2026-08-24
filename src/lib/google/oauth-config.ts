@@ -22,10 +22,14 @@ export class OAuthConfigError extends Error {
  * references at build time, so dynamic lookups silently resolve to `undefined`
  * in bundled runtimes (Edge, and any `NEXT_PUBLIC_*` read).
  *
- * Trade-off of validating lazily instead of at import time: a bad deployment is
- * no longer detected when the module first loads. `assertGoogleOAuthConfig()`
- * exists so entry points into the OAuth flow can restore that fail-fast check
- * before doing any work.
+ * The getters below deliberately do NOT throw when a variable is missing. They
+ * are evaluated while Next.js collects route metadata at build time (and when
+ * the module graph is traced), so a throwing getter would surface as a hard
+ * build failure on hosts that don't inject every OAuth var at build (e.g.
+ * Vercel). Instead the getters return an empty string and the fail-fast check
+ * lives in `assertGoogleOAuthConfig()`, which entry points call before doing
+ * any OAuth work — so a misconfigured deployment still fails clearly, just at
+ * request time rather than build time.
  */
 function requireEnv(name: string, value: string | undefined): string {
   if (!value) {
@@ -36,10 +40,10 @@ function requireEnv(name: string, value: string | undefined): string {
 
 export const GOOGLE_OAUTH = {
   get clientId(): string {
-    return requireEnv("GOOGLE_CLIENT_ID", process.env.GOOGLE_CLIENT_ID);
+    return process.env.GOOGLE_CLIENT_ID ?? "";
   },
   get clientSecret(): string {
-    return requireEnv("GOOGLE_CLIENT_SECRET", process.env.GOOGLE_CLIENT_SECRET);
+    return process.env.GOOGLE_CLIENT_SECRET ?? "";
   },
   authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
   tokenUrl: "https://oauth2.googleapis.com/token",
@@ -50,7 +54,7 @@ export const GOOGLE_OAUTH = {
     "https://www.googleapis.com/auth/userinfo.email",
   ]),
   get redirectUri(): string {
-    return `${requireEnv("NEXT_PUBLIC_APP_URL", process.env.NEXT_PUBLIC_APP_URL)}/api/auth/google/callback`;
+    return `${process.env.NEXT_PUBLIC_APP_URL ?? ""}/api/auth/google/callback`;
   },
 } as const;
 
@@ -64,7 +68,7 @@ export const GOOGLE_OAUTH = {
  * @throws {OAuthConfigError} if any required variable is missing.
  */
 export function assertGoogleOAuthConfig(): void {
-  void GOOGLE_OAUTH.clientId;
-  void GOOGLE_OAUTH.clientSecret;
-  void GOOGLE_OAUTH.redirectUri;
+  requireEnv("GOOGLE_CLIENT_ID", process.env.GOOGLE_CLIENT_ID);
+  requireEnv("GOOGLE_CLIENT_SECRET", process.env.GOOGLE_CLIENT_SECRET);
+  requireEnv("NEXT_PUBLIC_APP_URL", process.env.NEXT_PUBLIC_APP_URL);
 }

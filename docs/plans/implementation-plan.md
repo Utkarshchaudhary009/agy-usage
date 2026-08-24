@@ -867,7 +867,7 @@ src/app/api/quota/history/route.ts
 **Feature**: Configure auto-wakeup schedules (replaces CLI's `wakeup config`)
 
 **Tasks**:
-- [ ] Create migration `004_wakeup.sql`:
+- [x] Create migration `009_wakeup.sql`:
   ```sql
   CREATE TABLE public.wakeup_configs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -904,34 +904,37 @@ src/app/api/quota/history/route.ts
   CREATE INDEX idx_wakeup_logs_time
     ON public.wakeup_logs (clerk_user_id, created_at DESC);
   ```
-- [ ] Build wakeup config page `src/app/(dashboard)/wakeup/page.tsx`
-- [ ] Build config form `src/components/wakeup/config-form.tsx`:
-  - Enable/disable toggle
-  - Model selector (checkboxes: claude-sonnet-4-5, gemini-3-flash, gemini-3-pro-low)
-  - Account selector (which linked accounts to trigger)
-  - Schedule mode selector (interval / daily times / custom cron)
-  - Interval slider (every N hours)
-  - Daily time picker (add/remove times)
-  - Custom cron expression input with human-readable preview
-  - Save button → PUT `/api/wakeup/config`
-- [ ] Create wakeup config API routes:
-  - `GET /api/wakeup/config` → get current config
-  - `PUT /api/wakeup/config` → update config (validates, then saves)
-  - Both verify Clerk auth
-- [ ] Show "next trigger" preview based on schedule
-- [ ] Validate cron expressions server-side
+- [x] Build wakeup config page `src/app/(dashboard)/wakeup/page.tsx`
+- [x] Build config form `src/components/wakeup/config-form.tsx`:
+   - Enable/disable toggle
+   - Model selector (checkboxes: claude-sonnet-4-5, gemini-3-flash, gemini-3-pro-low)
+   - Account selector (which linked accounts to trigger)
+   - Schedule mode selector (interval / daily times / custom cron)
+   - Interval slider (every N hours)
+   - Daily time picker (add/remove times)
+   - Custom cron expression input with human-readable preview
+   - Save button → PUT `/api/wakeup/config`
+- [x] Create wakeup config API routes:
+   - `GET /api/wakeup/config` → get current config
+   - `PUT /api/wakeup/config` → update config (validates, then saves)
+   - Both verify Clerk auth
+- [x] Show "next trigger" preview based on schedule
+- [x] Validate cron expressions server-side
 
 **Deliverable**: Users can configure their wakeup schedule through a polished UI. Config saved to Supabase.
 
 **Files**:
 ```
-supabase/migrations/004_wakeup.sql
+supabase/migrations/009_wakeup.sql
 src/app/(dashboard)/wakeup/page.tsx
 src/components/wakeup/config-form.tsx
 src/components/wakeup/model-selector.tsx
 src/components/wakeup/schedule-picker.tsx
 src/app/api/wakeup/config/route.ts
 src/lib/types/wakeup.ts
+src/lib/wakeup/models.ts
+src/lib/wakeup/schedule-evaluator.ts
+src/lib/wakeup/config.ts
 ```
 
 ---
@@ -941,14 +944,14 @@ src/lib/types/wakeup.ts
 **Feature**: Server-side wakeup trigger service (ported from CLI's `trigger-service.ts`)
 
 **Tasks**:
-- [ ] Create trigger service `src/lib/wakeup/trigger-service.ts`:
+- [x] Create trigger service `src/lib/wakeup/trigger-service.ts`:
   - `triggerSingleModel(accountId, modelId, prompt, maxTokens): Promise<TriggerResult>`
     - Get valid token via token-manager
     - Resolve project ID
     - Call `streamGenerateContent` endpoint
     - Read first SSE chunk, abort connection (minimal token usage)
     - Return `{ success, durationMs, error? }`
-  - `triggerAllModels(accountId, models, prompt): Promise<TriggerResult[]>`
+  - `triggerAllModels(accountId, models, prompt, maxTokens): Promise<TriggerResult[]>`
     - Sequential trigger for each model (avoid rate limits)
     - Log each result to `wakeup_logs`
   - `executeWakeup(clerkUserId): Promise<WakeupResult>`
@@ -956,10 +959,10 @@ src/lib/types/wakeup.ts
     - Check cooldown (skip if triggered within cooldown period)
     - For each selected account → trigger all selected models
     - Return aggregate result
-- [ ] Create cooldown checker `src/lib/wakeup/cooldown.ts`:
+- [x] Create cooldown checker `src/lib/wakeup/cooldown.ts`:
   - `isOnCooldown(clerkUserId): Promise<boolean>`
   - Query last trigger from `wakeup_logs`, compare with `cooldown_minutes`
-- [ ] Create manual trigger API route `src/app/api/wakeup/trigger/route.ts`:
+- [x] Create manual trigger API route `src/app/api/wakeup/trigger/route.ts`:
   - `POST /api/wakeup/trigger` → trigger now for current user
   - `POST /api/wakeup/trigger` with body `{ accountId, modelId }` → specific trigger
   - Clerk auth required
@@ -983,7 +986,7 @@ src/app/api/wakeup/trigger/route.ts
 **Why Inngest over Vercel Cron**: Inngest provides built-in retries, idempotency, fan-out to multiple users, per-step timeouts, observability dashboard, and graceful error handling. Vercel Cron has a hard 60s timeout and no retry logic.
 
 **Tasks**:
-- [ ] Create Inngest cron function `src/lib/inngest/functions/scheduled-wakeup.ts`:
+- [x] Create Inngest cron function `src/lib/inngest/functions/scheduled-wakeup.ts`:
   ```typescript
   export const scheduledWakeup = inngest.createFunction(
     {
@@ -1019,7 +1022,7 @@ src/app/api/wakeup/trigger/route.ts
     }
   )
   ```
-- [ ] Create Inngest event handler `src/lib/inngest/functions/execute-wakeup.ts`:
+- [x] Create Inngest event handler `src/lib/inngest/functions/execute-wakeup.ts`:
   ```typescript
   export const executeWakeupHandler = inngest.createFunction(
     {
@@ -1047,13 +1050,13 @@ src/app/api/wakeup/trigger/route.ts
     }
   )
   ```
-- [ ] Create schedule evaluator `src/lib/wakeup/schedule-evaluator.ts`:
+- [x] Create schedule evaluator `src/lib/wakeup/schedule-evaluator.ts`:
   - `shouldTriggerNow(config, lastTriggerTime): boolean`
   - Interval mode: check if N hours passed since last trigger
   - Daily mode: check if current hour:minute matches any daily_times (±5 min window)
   - Custom cron: evaluate cron expression against current time
-- [ ] Register all Inngest functions in `src/lib/inngest/functions/index.ts`
-- [ ] Add Inngest dev server to dev workflow: `npx inngest-cli dev`
+- [x] Register all Inngest functions in `src/lib/inngest/functions/index.ts`
+- [x] Add Inngest dev server to dev workflow: `npx inngest-cli dev`
 
 **Deliverable**: Wakeup triggers run automatically via Inngest. Hourly cron checks schedules, fans out to per-user event handlers with retries and concurrency control.
 
