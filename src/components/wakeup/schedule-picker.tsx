@@ -61,8 +61,13 @@ export function SchedulePicker({
   const addDailyTime = () => {
     internalChange.current = true;
     const used = new Set(timeItems.map((t) => t.value));
-    const candidate =
-      DAILY_TIME_SUGGESTIONS.find((t) => !used.has(t)) ?? "08:00";
+    const candidate = DAILY_TIME_SUGGESTIONS.find((t) => !used.has(t)) ?? null;
+    if (candidate === null) {
+      // Every suggestion is already present; don't insert a duplicate row and
+      // instead leave the existing items untouched.
+      internalChange.current = false;
+      return;
+    }
     const id = `new-${nextId.current++}`;
     const next = [...timeItems, { id, value: candidate }];
     setTimeItems(next);
@@ -85,6 +90,10 @@ export function SchedulePicker({
 
   const cronValid =
     cronExpression.trim().length === 0 || isValidCronExpression(cronExpression);
+
+  const canAddDailyTime = DAILY_TIME_SUGGESTIONS.some(
+    (t) => !timeItems.some((item) => item.value === t),
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -153,7 +162,8 @@ export function SchedulePicker({
             <button
               type="button"
               onClick={addDailyTime}
-              className="flex items-center gap-1 rounded-md border border-dashed border-border px-3 text-sm text-muted-foreground transition-colors hover:bg-muted"
+              disabled={!canAddDailyTime}
+              className="flex items-center gap-1 rounded-md border border-dashed border-border px-3 text-sm text-muted-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Plus className="size-4" />
               Add time

@@ -31,6 +31,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
             key={model.id}
             className={cn(
               "flex cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors",
+              "focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background",
               active
                 ? "border-primary bg-primary/5 ring-1 ring-primary/40"
                 : "border-border bg-background hover:bg-muted",
@@ -58,6 +59,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
               type="checkbox"
               className="sr-only"
               checked={active}
+              aria-label={getWakeupModelLabel(model.id)}
               onChange={() => toggle(model.id)}
             />
           </label>

@@ -35,12 +35,14 @@ interface ConfigFormProps {
 
 function Switch({
   checked,
-  onChange,
+  onCheckedChange,
   label,
+  disabled = false,
 }: {
   checked: boolean;
-  onChange: (next: boolean) => void;
+  onCheckedChange: (next: boolean) => void;
   label: string;
+  disabled?: boolean;
 }) {
   return (
     <button
@@ -48,9 +50,12 @@ function Switch({
       role="switch"
       aria-checked={checked}
       aria-label={label}
-      onClick={() => onChange(!checked)}
+      disabled={disabled}
+      onClick={() => onCheckedChange(!checked)}
       className={cn(
         "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        "disabled:cursor-not-allowed disabled:opacity-50",
         checked ? "bg-primary" : "bg-muted-foreground/30",
       )}
     >
@@ -190,7 +195,7 @@ export function ConfigForm({ config, accounts }: ConfigFormProps) {
           </div>
           <Switch
             checked={enabled}
-            onChange={setEnabled}
+            onCheckedChange={setEnabled}
             label="Enable automatic wakeup"
           />
         </CardHeader>
@@ -243,6 +248,7 @@ export function ConfigForm({ config, accounts }: ConfigFormProps) {
                     key={account.id}
                     className={cn(
                       "flex cursor-pointer items-center justify-between rounded-lg border px-3 py-2.5 text-left text-sm transition-colors",
+                      "focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background",
                       active
                         ? "border-primary bg-primary/5 ring-1 ring-primary/40"
                         : "border-border bg-background hover:bg-muted",
@@ -265,6 +271,7 @@ export function ConfigForm({ config, accounts }: ConfigFormProps) {
                       type="checkbox"
                       className="sr-only"
                       checked={active}
+                      aria-label={accountLabel(account)}
                       onChange={() => toggleAccount(account.id)}
                     />
                   </label>
@@ -364,7 +371,7 @@ export function ConfigForm({ config, accounts }: ConfigFormProps) {
             </div>
             <Switch
               checked={wakeOnReset}
-              onChange={setWakeOnReset}
+              onCheckedChange={setWakeOnReset}
               label="Wake on quota reset"
             />
           </div>
