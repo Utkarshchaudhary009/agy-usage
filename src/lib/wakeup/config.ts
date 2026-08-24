@@ -338,7 +338,6 @@ export async function saveWakeupConfig(
       max_output_tokens: v.maxOutputTokens,
       cooldown_minutes: v.cooldownMinutes,
       wake_on_reset: v.wakeOnReset,
-      updated_at: new Date().toISOString(),
     },
     { onConflict: "clerk_user_id" },
   );

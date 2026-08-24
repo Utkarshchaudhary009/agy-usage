@@ -87,6 +87,14 @@ CREATE INDEX idx_wakeup_logs_time
 CREATE INDEX idx_wakeup_logs_account
   ON public.wakeup_logs (account_id, created_at DESC);
 
+-- The scheduled-wakeup Inngest function (src/lib/inngest/functions/scheduled-wakeup.ts)
+-- runs every hour and scans `WHERE enabled = true ORDER BY clerk_user_id` to fan out
+-- per-user triggers. A partial index keyed on clerk_user_id, restricted to enabled
+-- rows, lets Postgres satisfy both the filter and the sort from the index instead of
+-- a sequential scan + sort that degrades as the table grows.
+CREATE INDEX idx_wakeup_configs_enabled
+  ON public.wakeup_configs (clerk_user_id) WHERE enabled = true;
+
 -- updated_at is owned by the database, not the caller: an app-supplied
 -- timestamp is subject to client clock skew and can be forged by anyone
 -- holding the anon key.
