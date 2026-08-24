@@ -26,6 +26,8 @@ const MODE_LABELS: { value: ScheduleMode; label: string; hint: string }[] = [
   { value: "custom", label: "Custom cron", hint: "Advanced schedule" },
 ];
 
+const DAILY_TIME_SUGGESTIONS = ["09:00", "12:00", "15:00", "18:00", "21:00"];
+
 export function SchedulePicker({
   mode,
   intervalHours,
@@ -36,39 +38,33 @@ export function SchedulePicker({
   onDailyTimesChange,
   onCronChange,
 }: SchedulePickerProps) {
-  // Internal items keep a stable id per time so React keys don't depend on the
-  // array index (times can be duplicated or edited in place). The id source is
-  // instance-local (not module-level) so multiple mounted pickers and SSR
-  // hydration each get deterministic, non-colliding ids.
-  // Start above the indices used by the initial `dt-${i + 1}` items so generated
-  // ids never collide with them (a collision would produce duplicate React keys
-  // when a time is added).
-  const nextId = useRef(dailyTimes.length);
-  const makeId = () => {
-    nextId.current += 1;
-    return `dt-${nextId.current}`;
-  };
-
-  const internalChange = useRef(false);
-
+  // `dailyTimes` is the source of truth (owned by the parent form). We mirror it
+  // into local `timeItems` so each row keeps a stable React key while it is being
+  // edited/added/removed, and so an external change (e.g. the config reloaded
+  // after save) replaces the rows without fighting the user's in-progress typing.
   const [timeItems, setTimeItems] = useState<{ id: string; value: string }[]>(
-    () => dailyTimes.map((t, i) => ({ id: `dt-${i + 1}`, value: t })),
+    () => dailyTimes.map((t, i) => ({ id: `dt-${i}`, value: t })),
   );
+  // Set while we mutate `timeItems` ourselves so the prop-sync effect below skips
+  // the rebuild (rebuilding would remount the inputs and drop focus mid-edit).
+  const internalChange = useRef(false);
+  const nextId = useRef(dailyTimes.length);
 
   useEffect(() => {
-    if (!internalChange.current) {
-      setTimeItems(dailyTimes.map((t, i) => ({ id: `dt-${i + 1}`, value: t })));
+    if (internalChange.current) {
+      internalChange.current = false;
+      return;
     }
-    internalChange.current = false;
+    setTimeItems(dailyTimes.map((t, i) => ({ id: `dt-${i}`, value: t })));
   }, [dailyTimes]);
 
   const addDailyTime = () => {
     internalChange.current = true;
     const used = new Set(timeItems.map((t) => t.value));
-    const candidate = ["09:00", "12:00", "15:00", "18:00", "21:00"].find(
-      (t) => !used.has(t),
-    );
-    const next = [...timeItems, { id: makeId(), value: candidate ?? "08:00" }];
+    const candidate =
+      DAILY_TIME_SUGGESTIONS.find((t) => !used.has(t)) ?? "08:00";
+    const id = `new-${nextId.current++}`;
+    const next = [...timeItems, { id, value: candidate }];
     setTimeItems(next);
     onDailyTimesChange(next.map((t) => t.value));
   };

@@ -2,7 +2,11 @@
 
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { WAKEUP_MODELS } from "@/lib/wakeup/models";
+import {
+  getWakeupModelLabel,
+  getWakeupModelProviderLabel,
+  WAKEUP_MODELS,
+} from "@/lib/wakeup/models";
 
 interface ModelSelectorProps {
   value: string[];
@@ -33,9 +37,11 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
             )}
           >
             <span className="flex flex-col">
-              <span className="font-medium">{model.label}</span>
+              <span className="font-medium">
+                {getWakeupModelLabel(model.id)}
+              </span>
               <span className="text-xs text-muted-foreground">
-                {model.provider === "anthropic" ? "Anthropic" : "Google"}
+                {getWakeupModelProviderLabel(model.provider)}
               </span>
             </span>
             <span

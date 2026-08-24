@@ -25,3 +25,14 @@ export function isWakeupModelId(value: string): boolean {
 export function getWakeupModelLabel(id: string): string {
   return WAKEUP_MODELS.find((m) => m.id === id)?.label ?? id;
 }
+
+export const WAKEUP_PROVIDER_LABELS = {
+  anthropic: "Anthropic",
+  google: "Google",
+} as const satisfies Record<WakeupModel["provider"], string>;
+
+export function getWakeupModelProviderLabel(
+  provider: WakeupModel["provider"],
+): string {
+  return WAKEUP_PROVIDER_LABELS[provider];
+}

@@ -54,9 +54,3 @@ export interface TriggerAllResult {
   skipped: boolean;
   skipReason?: string;
 }
-
-export interface CooldownStatus {
-  onCooldown: boolean;
-  lastTriggerAt: string | null;
-  cooldownEndsAt: string | null;
-}
