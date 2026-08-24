@@ -8,6 +8,17 @@ import type { Database } from "@/lib/types/database";
 import type { TriggerAllResult, TriggerSingleResult } from "@/lib/types/wakeup";
 import { getWakeupConfig } from "./config";
 
+// A single wakeup run expands into one upstream Google request per (account,
+// model) pair. That multiplication is an amplification primitive: a config of
+// 50 accounts x 20 models would otherwise issue 1000 upstream requests every
+// time its schedule fires. Cap the number of upstream requests a single run may
+// perform so no user — manual or scheduled — can blow the upstream budget in
+// one shot. The manual endpoint's per-user rate limit bounds how often a run
+// starts; this bounds how much a single run does. When the projected expansion
+// exceeds the budget we trim the most expensive dimension (accounts) and keep
+// every requested model, since waking the models is the point of the feature.
+const MAX_WAKEUP_REQUESTS_PER_RUN = 200;
+
 // Upstream error messages can transitively carry credential material — Google
 // sometimes echoes a request's `Authorization` header or a token-bearing URL
 // back in an error body, and the token-refresh path can surface the token
@@ -165,7 +176,7 @@ export async function executeWakeup(
   // An empty selection means "all of my linked accounts" (per the config UI).
   // Resolve them here (cheap read) before claiming the cooldown window, so a
   // no-op run with no target accounts never stamps a cooldown.
-  const targetAccountIds =
+  let targetAccountIds =
     config.selectedAccountIds.length > 0
       ? config.selectedAccountIds
       : await getClerkAccountIds(supabase, clerkUserId);
@@ -177,6 +188,27 @@ export async function executeWakeup(
       skipped: true,
       skipReason: "No accounts selected",
     };
+  }
+
+  // Bound the upstream work this run will perform (see
+  // MAX_WAKEUP_REQUESTS_PER_RUN). Trim excess accounts rather than dropping
+  // models so the configured wake targets are still all exercised.
+  const projectedRequests =
+    targetAccountIds.length * config.selectedModels.length;
+  if (projectedRequests > MAX_WAKEUP_REQUESTS_PER_RUN) {
+    const maxAccounts = Math.max(
+      1,
+      Math.floor(MAX_WAKEUP_REQUESTS_PER_RUN / config.selectedModels.length),
+    );
+    if (targetAccountIds.length > maxAccounts) {
+      console.warn(
+        `Wakeup for user ${clerkUserId} would issue ${projectedRequests} ` +
+          `upstream requests, exceeding the per-run budget of ` +
+          `${MAX_WAKEUP_REQUESTS_PER_RUN}; trimming ${targetAccountIds.length} ` +
+          `accounts to ${maxAccounts}.`,
+      );
+      targetAccountIds = targetAccountIds.slice(0, maxAccounts);
+    }
   }
 
   // Atomically claim the cooldown window *before* doing any trigger work. The

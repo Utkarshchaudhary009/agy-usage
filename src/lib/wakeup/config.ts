@@ -114,21 +114,24 @@ export function validateWakeupConfig(
       code: "INVALID_MODELS",
     };
   }
-  // Deduplicate: the trigger service issues one upstream request per entry, so
-  // a repeated model id would multiply the work a single schedule performs.
-  const selectedModels = [
-    ...new Set(
-      raw.selectedModels.filter(
-        (m): m is string => typeof m === "string" && isWakeupModelId(m),
-      ),
-    ),
-  ];
-  if (selectedModels.length === 0) {
-    return {
-      ok: false,
-      error: "One or more selected models are invalid.",
-      code: "INVALID_MODELS",
-    };
+  // Reject any non-string or unsupported model id rather than silently dropping
+  // it. A save that returns success while persisting a different set of models
+  // than the client sent would hide malformed input from both the user and any
+  // audit logic. Deduplicate valid ids afterwards so a repeated valid id is not
+  // treated as an error.
+  const selectedModels: string[] = [];
+  const seenModels = new Set<string>();
+  for (const m of raw.selectedModels) {
+    if (typeof m !== "string" || !isWakeupModelId(m)) {
+      return {
+        ok: false,
+        error: "One or more selected models are invalid.",
+        code: "INVALID_MODELS",
+      };
+    }
+    if (seenModels.has(m)) continue;
+    seenModels.add(m);
+    selectedModels.push(m);
   }
 
   if (!Array.isArray(raw.selectedAccountIds)) {
