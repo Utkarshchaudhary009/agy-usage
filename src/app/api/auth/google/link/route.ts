@@ -15,9 +15,15 @@ export async function GET() {
     redirect("/sign-in");
   }
 
-  // Fail fast on a misconfigured deployment: better one clear OAuthConfigError
-  // here than a half-started flow with a dangling state cookie.
-  assertGoogleOAuthConfig();
+  // Fail fast on a misconfigured deployment: better one clear error here than
+  // a half-started flow with a dangling state cookie. Redirect instead of
+  // throwing so the user sees the same friendly error surface as the callback
+  // route rather than a raw 500.
+  try {
+    assertGoogleOAuthConfig();
+  } catch {
+    redirect("/accounts?error=configuration_error");
+  }
 
   // Generate PKCE verifier and challenge
   const verifier = crypto.randomBytes(32).toString("base64url");
