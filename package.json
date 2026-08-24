@@ -15,6 +15,7 @@
     "lint": "biome check",
     "lint:write": "biome check --write",
     "format": "biome format --write",
+    "inngest:dev": "inngest-cli dev",
     "prepare": "husky"
   },
   "dependencies": {
