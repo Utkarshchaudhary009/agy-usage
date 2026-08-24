@@ -8,6 +8,29 @@ import type { Database } from "@/lib/types/database";
 import type { TriggerAllResult, TriggerSingleResult } from "@/lib/types/wakeup";
 import { getWakeupConfig } from "./config";
 
+// Upstream error messages can transitively carry credential material — Google
+// sometimes echoes a request's `Authorization` header or a token-bearing URL
+// back in an error body, and the token-refresh path can surface the token
+// endpoint URL. These strings are persisted verbatim to the user-readable
+// `wakeup_logs.error` column and also returned in the trigger response, so we
+// redact anything that looks like a secret before it leaves this module.
+const SECRET_PATTERNS = [
+  /\bBearer\s+[A-Za-z0-9._~-]+/gi,
+  /\baccess_token[=:]\s*[^\s,"}]+/gi,
+  /\brefresh_token[=:]\s*[^\s,"}]+/gi,
+  /\bclient_secret[=:]\s*[^\s,"}]+/gi,
+  /\bAuthorization[=:]\s*[^\s,"}]+/gi,
+  /\b[A-Za-z0-9_-]{32,}\.[A-Za-z0-9_-]{32,}/g, // JWT / dot-delimited secrets
+] as const;
+
+function scrubSecret(value: string): string {
+  let out = value;
+  for (const re of SECRET_PATTERNS) {
+    out = out.replace(re, "[REDACTED]");
+  }
+  return out;
+}
+
 // Returns the calling user's own linked account ids. Used to expand an empty
 // account selection ("trigger all my accounts") into concrete targets.
 async function getClerkAccountIds(
@@ -55,7 +78,8 @@ export async function triggerSingleModel(
     responsePreview = result.text?.slice(0, 200) || undefined;
   } catch (err: unknown) {
     success = false;
-    error = err instanceof Error ? err.message : String(err);
+    const raw = err instanceof Error ? err.message : String(err);
+    error = scrubSecret(raw).slice(0, 2000);
   }
 
   return {
