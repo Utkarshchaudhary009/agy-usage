@@ -147,7 +147,6 @@ function cronDayMatches(spec: CronSpec, date: Date): boolean {
   return true;
 }
 
-const TRIGGER_WINDOW_MS = 5 * 60 * 1000;
 /**
  * Day-granularity search horizon. Four years covers the rarest legitimate
  * schedule (Feb 29) while keeping a never-matching expression — `0 0 30 2 *` is
@@ -157,9 +156,18 @@ const TRIGGER_WINDOW_MS = 5 * 60 * 1000;
 const MAX_LOOKAHEAD_DAYS = 4 * 366;
 
 /**
+ * How far back an "untriggered" occurrence may be and still count as a pending
+ * trigger. The evaluator only runs on the hourly cron (`0 * * * *`), so the
+ * first chance to fire an occurrence is up to ~1h after it was due. Any
+ * occurrence older than this is treated as a stale catch-up from a prior
+ * enablement or an extended outage, not a live trigger, and is skipped.
+ */
+const TRIGGER_LATENCY_MS = 60 * 60 * 1000;
+
+/**
  * Computes the next time a schedule would fire on or after `from`. Returns null
  * if no occurrence exists within the search horizon (an expression such as
- * February 30th never fires).
+ * February 30th never fires). Used for the "next trigger" preview.
  */
 export function getNextTriggerTime(
   from: Date,
@@ -184,11 +192,13 @@ export function getNextTriggerTime(
     if (times.length === 0) return null;
 
     const nowMinutes = cursor.getHours() * 60 + cursor.getMinutes();
-    let target = times.find((t) => t > nowMinutes);
-    if (target === undefined) target = times[0]; // wrap to next day's first time
+    // First time at or after the current minute; wrap to tomorrow's first time
+    // only when every time is still later today.
+    const idx = times.findIndex((t) => t >= nowMinutes);
+    const target = idx === -1 ? times[0] : times[idx];
+    const dayOffset = idx === -1 ? 1 : 0;
 
     const result = new Date(cursor);
-    const dayOffset = target > nowMinutes ? 0 : 1;
     result.setDate(result.getDate() + dayOffset);
     result.setHours(Math.floor(target / 60), target % 60, 0, 0);
     return result;
@@ -221,8 +231,84 @@ export function getNextTriggerTime(
 }
 
 /**
+ * Computes the most recent time a schedule fired on or before `before`. Returns
+ * null when no occurrence exists within the look-behind horizon. This is the
+ * inverse of `getNextTriggerTime` and is what `shouldTriggerNow` consults:
+ * an occurrence should fire exactly once, at the first evaluation after it was
+ * due, which is whenever the latest past occurrence is newer than the last run.
+ */
+export function getPreviousTriggerTime(
+  before: Date,
+  schedule: ScheduleInput,
+): Date | null {
+  const cursor = new Date(before);
+  cursor.setSeconds(0, 0);
+
+  if (schedule.scheduleMode === "daily") {
+    const times = schedule.dailyTimes
+      .filter(isDailyTime)
+      .map((t) => {
+        const [h, m] = t.split(":").map(Number);
+        return h * 60 + m;
+      })
+      .sort((a, b) => a - b);
+    if (times.length === 0) return null;
+
+    const cursorMinutes = cursor.getHours() * 60 + cursor.getMinutes();
+    // Latest time on or before today's cursor time.
+    let chosen: number | null = null;
+    for (const t of times) {
+      if (t <= cursorMinutes) chosen = t;
+      else break;
+    }
+    if (chosen !== null) {
+      const result = new Date(cursor);
+      result.setHours(Math.floor(chosen / 60), chosen % 60, 0, 0);
+      return result;
+    }
+    // All times are still later today: the previous occurrence is the latest
+    // time on the previous day.
+    const yesterday = new Date(cursor);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const last = times[times.length - 1];
+    yesterday.setHours(Math.floor(last / 60), last % 60, 0, 0);
+    return yesterday;
+  }
+
+  // Custom cron: walk days backward (bounded by MAX_LOOKAHEAD_DAYS) and return
+  // the largest matching hour/minute that is on or before the cursor.
+  const spec = parseCronExpression(schedule.cronExpression ?? "");
+  if (!spec) return null;
+
+  const day = new Date(cursor);
+  day.setHours(0, 0, 0, 0);
+
+  for (let i = 0; i <= MAX_LOOKAHEAD_DAYS; i++) {
+    if (cronDayMatches(spec, day)) {
+      for (let hi = spec.hours.length - 1; hi >= 0; hi--) {
+        const h = spec.hours[hi];
+        for (let mi = spec.minutes.length - 1; mi >= 0; mi--) {
+          const m = spec.minutes[mi];
+          const candidate = new Date(day);
+          candidate.setHours(h, m, 0, 0);
+          if (candidate.getTime() <= cursor.getTime()) return candidate;
+        }
+      }
+    }
+    day.setDate(day.getDate() - 1);
+  }
+
+  return null;
+}
+
+/**
  * Decides whether a schedule should fire right now. Used by the Inngest cron
  * evaluator (Phase 16) to fan out per-user triggers.
+ *
+ * The decision is uniform across modes: fire if the latest occurrence that has
+ * already happened (see `getPreviousTriggerTime`) is newer than the last run.
+ * Interval mode is the exception because its occurrences are anchored to the
+ * last run rather than an absolute grid.
  */
 export function shouldTriggerNow(
   schedule: ScheduleInput,
@@ -235,32 +321,13 @@ export function shouldTriggerNow(
     return elapsed >= schedule.intervalHours * 60 * 60 * 1000;
   }
 
-  if (schedule.scheduleMode === "daily") {
-    const windowStart = now.getTime() - TRIGGER_WINDOW_MS;
-    for (const t of schedule.dailyTimes.filter(isDailyTime)) {
-      const [h, m] = t.split(":").map(Number);
-      const occ = new Date(now);
-      occ.setHours(h, m, 0, 0);
-      const start = occ.getTime();
-      if (start < windowStart) continue; // already passed this occurrence
-      if (now.getTime() < start || now.getTime() > start + TRIGGER_WINDOW_MS) {
-        continue;
-      }
-      // Fire if we haven't already fired for this occurrence.
-      if (!lastTrigger || lastTrigger.getTime() < start) return true;
-    }
-    return false;
-  }
-
-  // custom cron
-  const occ = getNextTriggerTime(
-    new Date(now.getTime() - TRIGGER_WINDOW_MS),
-    schedule,
-  );
-  if (!occ) return false;
-  const start = occ.getTime();
-  if (now.getTime() < start || now.getTime() > start + TRIGGER_WINDOW_MS) {
-    return false;
-  }
-  return !lastTrigger || lastTrigger.getTime() < start;
+  const prev = getPreviousTriggerTime(now, schedule);
+  if (!prev) return false;
+  // Ignore occurrences older than the cron cadence: they are stale catch-ups,
+  // not live triggers (e.g. a schedule enabled minutes after its only daily
+  // time, or a missed run during an outage).
+  if (prev.getTime() < now.getTime() - TRIGGER_LATENCY_MS) return false;
+  // Fire only for an occurrence we have not already triggered for.
+  if (lastTrigger && lastTrigger.getTime() >= prev.getTime()) return false;
+  return true;
 }
