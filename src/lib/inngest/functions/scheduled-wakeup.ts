@@ -36,6 +36,7 @@ export const scheduledWakeup = inngest.createFunction(
             "clerk_user_id, schedule_mode, interval_hours, daily_times, cron_expression, last_run_started_at",
           )
           .eq("enabled", true)
+          .order("clerk_user_id")
           .range(start, start + LIMIT - 1);
 
         if (error) {

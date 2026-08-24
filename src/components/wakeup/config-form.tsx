@@ -103,21 +103,6 @@ export function ConfigForm({ config, accounts }: ConfigFormProps) {
 
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (!config) return;
-    setEnabled(config.enabled);
-    setSelectedModels(config.selectedModels);
-    setSelectedAccountIds(config.selectedAccountIds);
-    setScheduleMode(config.scheduleMode);
-    setIntervalHours(config.intervalHours);
-    setDailyTimes(config.dailyTimes);
-    setCronExpression(config.cronExpression ?? "");
-    setCustomPrompt(config.customPrompt);
-    setMaxOutputTokens(config.maxOutputTokens);
-    setCooldownMinutes(config.cooldownMinutes);
-    setWakeOnReset(config.wakeOnReset);
-  }, [config]);
-
   // Computed on the client only: `getNextTriggerTime(new Date(), …)` and
   // `toLocaleString()` both depend on the runtime clock/locale, which differ
   // between the server and the hydrating client and would cause a hydration

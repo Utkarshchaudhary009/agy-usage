@@ -1,11 +1,18 @@
 import "server-only";
 import { auth } from "@clerk/nextjs/server";
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ConfigForm } from "@/components/wakeup/config-form";
 import { createServerClient } from "@/lib/supabase/server";
 import type { WakeupAccount } from "@/lib/types/wakeup";
 import { getWakeupConfig } from "@/lib/wakeup/config";
+
+export const metadata: Metadata = {
+  title: "Wakeup",
+  description:
+    "Keep your models warm by periodically triggering a small request. This prevents cold starts and keeps your quota counters active.",
+};
 
 function WakeupSkeleton() {
   return (
@@ -40,7 +47,15 @@ async function WakeupLoader({ userId }: { userId: string }) {
     displayName: row.display_name,
   }));
 
-  return <ConfigForm config={config} accounts={accounts} />;
+  // Key by config id so the form (and its child SchedulePicker, which mirrors
+  // `dailyTimes` into its own local state) remounts with fresh initial values
+  // only when the underlying config actually changes — e.g. switching users.
+  // A plain `router.refresh()` returns the same id and therefore does NOT
+  // remount, which avoids the derived-state-from-props anti-pattern of copying
+  // the prop into every field via an effect and clobbering in-progress edits.
+  return (
+    <ConfigForm key={config?.id ?? "new"} config={config} accounts={accounts} />
+  );
 }
 
 export default async function WakeupPage() {
