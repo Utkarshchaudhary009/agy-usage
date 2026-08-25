@@ -990,7 +990,7 @@ src/app/api/wakeup/trigger/route.ts
 **Why Inngest over Vercel Cron**: Inngest provides built-in retries, idempotency, fan-out to multiple users, per-step timeouts, observability dashboard, and graceful error handling. Vercel Cron has a hard 60s timeout and no retry logic.
 
 **Tasks**:
-- [ ] Create Inngest cron function `src/lib/inngest/functions/scheduled-wakeup.ts`:
+- [x] Create Inngest cron function `src/lib/inngest/functions/scheduled-wakeup.ts`:
   ```typescript
   export const scheduledWakeup = inngest.createFunction(
     {
@@ -1026,7 +1026,7 @@ src/app/api/wakeup/trigger/route.ts
     }
   )
   ```
-- [ ] Create Inngest event handler `src/lib/inngest/functions/execute-wakeup.ts`:
+- [x] Create Inngest event handler `src/lib/inngest/functions/execute-wakeup.ts`:
   ```typescript
   export const executeWakeupHandler = inngest.createFunction(
     {
@@ -1054,7 +1054,7 @@ src/app/api/wakeup/trigger/route.ts
     }
   )
   ```
-- [ ] Create schedule evaluator `src/lib/wakeup/schedule-evaluator.ts`:
+- [x] Create schedule evaluator `src/lib/wakeup/schedule-evaluator.ts`:
   > **Decision from Phase 14 review**: schedules evaluate against server time
   > (UTC) for determinism; the config UI preview converts to the viewer's
   > browser-local timezone for display only. If per-user local-time schedules
@@ -1064,8 +1064,8 @@ src/app/api/wakeup/trigger/route.ts
   - Interval mode: check if N hours passed since last trigger
   - Daily mode: check if current hour:minute matches any daily_times (±5 min window)
   - Custom cron: evaluate cron expression against current time
-- [ ] Register all Inngest functions in `src/lib/inngest/functions/index.ts`
-- [ ] Add Inngest dev server to dev workflow: `npx inngest-cli dev`
+- [x] Register all Inngest functions in `src/lib/inngest/functions/index.ts`
+- [x] Add Inngest dev server to dev workflow: `npx inngest-cli dev`
 
 **Deliverable**: Wakeup triggers run automatically via Inngest. Hourly cron checks schedules, fans out to per-user event handlers with retries and concurrency control.
 
@@ -1076,6 +1076,15 @@ src/lib/inngest/functions/execute-wakeup.ts
 src/lib/wakeup/schedule-evaluator.ts
 src/lib/inngest/functions/index.ts    # Updated
 ```
+
+> **Implementation notes**: functions follow the repo's
+> `triggers: [{ cron | event }]` array syntax (not the older sketch form) and
+> pass `{ asBackgroundJob: true }` so handlers run under the service-role
+> client. Schedule slots fire on the first hourly tick at or after their time
+> (exact ±5-minute matching would silently skip non-top-of-hour daily times);
+> schedule evaluation runs as a single step against one shared instant so the
+> per-run step count stays bounded. The dev-server workflow is documented in
+> `src/lib/inngest/functions/index.ts`.
 
 ---
 
