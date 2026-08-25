@@ -941,7 +941,7 @@ src/lib/types/wakeup.ts
 **Feature**: Server-side wakeup trigger service (ported from CLI's `trigger-service.ts`)
 
 **Tasks**:
-- [ ] Create trigger service `src/lib/wakeup/trigger-service.ts`:
+- [x] Create trigger service `src/lib/wakeup/trigger-service.ts`:
   - `triggerSingleModel(accountId, modelId, prompt, maxTokens): Promise<TriggerResult>`
     - Get valid token via token-manager
     - Resolve project ID
@@ -956,16 +956,23 @@ src/lib/types/wakeup.ts
     - Check cooldown (skip if triggered within cooldown period)
     - For each selected account → trigger all selected models
     - Return aggregate result
-- [ ] Create cooldown checker `src/lib/wakeup/cooldown.ts`:
+- [x] Create cooldown checker `src/lib/wakeup/cooldown.ts`:
   - `isOnCooldown(clerkUserId): Promise<boolean>`
   - Query last trigger from `wakeup_logs`, compare with `cooldown_minutes`
-- [ ] Create manual trigger API route `src/app/api/wakeup/trigger/route.ts`:
+- [x] Create manual trigger API route `src/app/api/wakeup/trigger/route.ts`:
   - `POST /api/wakeup/trigger` → trigger now for current user
   - `POST /api/wakeup/trigger` with body `{ accountId, modelId }` → specific trigger
   - Clerk auth required
   - Returns result synchronously (each model takes 3-15s)
 
 **Deliverable**: Wakeup triggers can be executed server-side, either manually from UI or programmatically by Inngest.
+
+> **Implementation note**: cooldown is anchored to a `last_run_started_at`
+> column on `wakeup_configs`, stamped atomically by a `claim_wakeup_run()`
+> RPC (migration 010) *before* any trigger work, rather than to the newest
+> `wakeup_logs` row. A log-row check races concurrent runs (manual trigger vs
+> scheduled job both pass before either logs); the atomic claim makes
+> double-firing impossible and counts in-flight runs as "on cooldown".
 
 **Files**:
 ```
