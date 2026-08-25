@@ -32,12 +32,17 @@ export function StatusWidget({
   lastOutcome,
 }: StatusWidgetProps) {
   const [now, setNow] = useState<Date | null>(null);
+  // Locale/date formatting is client-only so SSR markup matches hydration.
+  const [formattedLast, setFormattedLast] = useState<string | null>(null);
 
   useEffect(() => {
     setNow(new Date());
+    if (lastOutcome) {
+      setFormattedLast(new Date(lastOutcome.createdAt).toLocaleString());
+    }
     const timer = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(timer);
-  }, []);
+  }, [lastOutcome]);
 
   const nextTriggerAt = useMemo(
     () =>
@@ -70,7 +75,7 @@ export function StatusWidget({
             <dt className="text-muted-foreground">Last trigger</dt>
             <dd>
               {lastOutcome
-                ? `${new Date(lastOutcome.createdAt).toLocaleString()} · ${
+                ? `${formattedLast ?? "…"} · ${
                     lastOutcome.success ? "succeeded" : "failed"
                   }`
                 : "Never triggered"}

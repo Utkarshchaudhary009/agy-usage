@@ -6,14 +6,15 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TriggerButton } from "@/components/wakeup/trigger-button";
-import type { WakeupLogEntry } from "@/lib/types/wakeup";
+import type { WakeupHistoryStats, WakeupLogEntry } from "@/lib/types/wakeup";
+import { WAKEUP_MODELS } from "@/lib/wakeup/models";
 
 interface HistoryTableProps {
   accounts: { id: string; email: string }[];
 }
 
 const PAGE_SIZE = 50;
-const EMPTY_STATS = {
+const EMPTY_STATS: WakeupHistoryStats = {
   total24h: 0,
   succeeded24h: 0,
   total7d: 0,
@@ -23,7 +24,7 @@ const EMPTY_STATS = {
 type SortField = "createdAt" | "durationMs";
 type StatusFilter = "" | "success" | "failed";
 
-export function WakeupHistory({ accounts }: HistoryTableProps) {
+export function HistoryTable({ accounts }: HistoryTableProps) {
   const [logs, setLogs] = useState<WakeupLogEntry[]>([]);
   const [stats, setStats] = useState(EMPTY_STATS);
   const [isLoading, setIsLoading] = useState(true);
@@ -31,7 +32,9 @@ export function WakeupHistory({ accounts }: HistoryTableProps) {
   // Bumped to force a refetch without changing filters (e.g. after a trigger).
   const [fetchNonce, setFetchNonce] = useState(0);
   const [accountFilter, setAccountFilter] = useState("");
+  const [modelFilter, setModelFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("");
+  const [loadError, setLoadError] = useState(false);
   const [sortField, setSortField] = useState<SortField>("createdAt");
   const [sortDesc, setSortDesc] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -53,6 +56,7 @@ export function WakeupHistory({ accounts }: HistoryTableProps) {
           nonce: String(fetchNonce),
         });
         if (accountFilter) params.set("account", accountFilter);
+        if (modelFilter) params.set("model", modelFilter);
         if (statusFilter) params.set("status", statusFilter);
 
         const res = await fetch(`/api/wakeup/history?${params}`, { signal });
@@ -62,21 +66,24 @@ export function WakeupHistory({ accounts }: HistoryTableProps) {
           message?: string;
         };
         if (!res.ok) {
+          setLoadError(true);
           toast.error(json.message || "Failed to load wakeup history.");
           return;
         }
+        setLoadError(false);
         setLogs(json.logs ?? []);
         setStats(json.stats ?? EMPTY_STATS);
         // A full page hints there may be more; next-page fetch confirms.
         setHasMore((json.logs ?? []).length === PAGE_SIZE);
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") return;
+        setLoadError(true);
         toast.error("Network error while loading wakeup history.");
       } finally {
         if (!signal.aborted) setIsLoading(false);
       }
     },
-    [page, accountFilter, statusFilter, fetchNonce],
+    [page, accountFilter, modelFilter, statusFilter, fetchNonce],
   );
 
   useEffect(() => {
@@ -131,12 +138,28 @@ export function WakeupHistory({ accounts }: HistoryTableProps) {
               setAccountFilter(e.target.value);
               setPage(0);
             }}
-            className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+            className="rounded-md border border-border bg-background px-3 py-2 text-sm focus-visible:border-ring focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             <option value="">All accounts</option>
             {accounts.map((account) => (
               <option key={account.id} value={account.id}>
                 {account.email}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Filter by model"
+            value={modelFilter}
+            onChange={(e) => {
+              setModelFilter(e.target.value);
+              setPage(0);
+            }}
+            className="rounded-md border border-border bg-background px-3 py-2 text-sm focus-visible:border-ring focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            <option value="">All models</option>
+            {WAKEUP_MODELS.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.label}
               </option>
             ))}
           </select>
@@ -147,7 +170,7 @@ export function WakeupHistory({ accounts }: HistoryTableProps) {
               setStatusFilter(e.target.value as StatusFilter);
               setPage(0);
             }}
-            className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+            className="rounded-md border border-border bg-background px-3 py-2 text-sm focus-visible:border-ring focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             <option value="">All statuses</option>
             <option value="success">Success</option>
@@ -164,30 +187,53 @@ export function WakeupHistory({ accounts }: HistoryTableProps) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border text-left text-muted-foreground">
-              <th className="py-2 pr-3 font-medium">
+              <th
+                scope="col"
+                className="py-2 pr-3 font-medium"
+                aria-sort={sortState(sortField === "createdAt", sortDesc)}
+              >
                 <button
                   type="button"
                   onClick={() => toggleSort("createdAt")}
                   className="hover:text-foreground"
                 >
-                  Timestamp{sortIndicator(sortField === "createdAt", sortDesc)}
+                  Timestamp
+                  <span aria-hidden>
+                    {sortGlyph(sortField === "createdAt", sortDesc)}
+                  </span>
                 </button>
               </th>
-              <th className="py-2 pr-3 font-medium">Account</th>
-              <th className="py-2 pr-3 font-medium">Model</th>
-              <th className="py-2 pr-3 font-medium">Status</th>
-              <th className="py-2 pr-3 font-medium">
+              <th scope="col" className="py-2 pr-3 font-medium">
+                Account
+              </th>
+              <th scope="col" className="py-2 pr-3 font-medium">
+                Model
+              </th>
+              <th scope="col" className="py-2 pr-3 font-medium">
+                Status
+              </th>
+              <th
+                scope="col"
+                className="py-2 pr-3 font-medium"
+                aria-sort={sortState(sortField === "durationMs", sortDesc)}
+              >
                 <button
                   type="button"
                   onClick={() => toggleSort("durationMs")}
                   className="hover:text-foreground"
                 >
                   Duration
-                  {sortIndicator(sortField === "durationMs", sortDesc)}
+                  <span aria-hidden>
+                    {sortGlyph(sortField === "durationMs", sortDesc)}
+                  </span>
                 </button>
               </th>
-              <th className="py-2 pr-3 font-medium">Error</th>
-              <th className="w-8 py-2" aria-hidden />
+              <th scope="col" className="py-2 pr-3 font-medium">
+                Error
+              </th>
+              <th scope="col" className="w-8 py-2">
+                <span className="sr-only">Details</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -199,7 +245,17 @@ export function WakeupHistory({ accounts }: HistoryTableProps) {
                   </td>
                 </tr>
               ))}
-            {!isLoading && sorted.length === 0 && (
+            {!isLoading && loadError && (
+              <tr>
+                <td
+                  colSpan={7}
+                  className="py-6 text-center text-muted-foreground"
+                >
+                  Failed to load history. Adjust the filters and try again.
+                </td>
+              </tr>
+            )}
+            {!isLoading && !loadError && sorted.length === 0 && (
               <tr>
                 <td
                   colSpan={7}
@@ -229,7 +285,7 @@ export function WakeupHistory({ accounts }: HistoryTableProps) {
                       <td className="max-w-40 truncate py-2 pr-3">
                         {log.accountId
                           ? (emailById.get(log.accountId) ??
-                            shortId(log.accountId))
+                            "(deleted account)")
                           : "—"}
                       </td>
                       <td className="py-2 pr-3">{log.modelId}</td>
@@ -247,17 +303,31 @@ export function WakeupHistory({ accounts }: HistoryTableProps) {
                         {log.error ?? "—"}
                       </td>
                       <td className="py-2 text-muted-foreground">
-                        {detail ? (
-                          isExpanded ? (
-                            <ChevronDown className="size-4" aria-hidden />
-                          ) : (
-                            <ChevronRight className="size-4" aria-hidden />
-                          )
-                        ) : null}
+                        {detail && (
+                          <button
+                            type="button"
+                            aria-expanded={isExpanded}
+                            aria-controls={`log-detail-${log.id}`}
+                            aria-label="Toggle details"
+                            onClick={() =>
+                              setExpandedId(isExpanded ? null : log.id)
+                            }
+                            className="rounded p-1 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            {isExpanded ? (
+                              <ChevronDown className="size-4" aria-hidden />
+                            ) : (
+                              <ChevronRight className="size-4" aria-hidden />
+                            )}
+                          </button>
+                        )}
                       </td>
                     </tr>
                     {isExpanded && detail && (
-                      <tr className="border-b border-border/50">
+                      <tr
+                        id={`log-detail-${log.id}`}
+                        className="border-b border-border/50"
+                      >
                         <td colSpan={7} className="pb-3">
                           <p className="text-xs break-words text-muted-foreground">
                             {detail}
@@ -295,16 +365,20 @@ export function WakeupHistory({ accounts }: HistoryTableProps) {
   );
 }
 
-function sortIndicator(active: boolean, desc: boolean) {
+function sortGlyph(active: boolean, desc: boolean) {
   if (!active) return "";
   return desc ? " ↓" : " ↑";
+}
+
+function sortState(
+  active: boolean,
+  desc: boolean,
+): "ascending" | "descending" | undefined {
+  if (!active) return undefined;
+  return desc ? "descending" : "ascending";
 }
 
 function formatDuration(ms: number | null): string {
   if (ms === null) return "—";
   return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
-}
-
-function shortId(id: string): string {
-  return id.slice(0, 8);
 }

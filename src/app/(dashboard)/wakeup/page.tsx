@@ -3,10 +3,9 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ConfigForm } from "@/components/wakeup/config-form";
-import { WakeupHistory } from "@/components/wakeup/history-table";
+import { HistoryTable } from "@/components/wakeup/history-table";
 import { createServerClient } from "@/lib/supabase/server";
 import type { WakeupAccountOption } from "@/lib/types/wakeup";
-import { getCooldownStatus } from "@/lib/wakeup/cooldown";
 import { toWakeupConfig } from "@/lib/wakeup/mapper";
 import { defaultWakeupConfig } from "@/lib/wakeup/models";
 
@@ -48,7 +47,6 @@ async function WakeupLoader({ userId }: { userId: string }) {
       .eq("clerk_user_id", userId)
       .order("added_at", { ascending: true }),
   ]);
-  const cooldown = await getCooldownStatus(userId);
 
   if (configResult.error) {
     console.error("Failed to load wakeup config:", configResult.error);
@@ -82,10 +80,12 @@ async function WakeupLoader({ userId }: { userId: string }) {
         accounts={accounts}
         accountsUnavailable={Boolean(accountsResult.error)}
         lastTriggerAt={
-          cooldown.lastTriggerAt ? new Date(cooldown.lastTriggerAt) : null
+          configResult.data?.last_run_started_at
+            ? new Date(configResult.data.last_run_started_at)
+            : null
         }
       />
-      <WakeupHistory
+      <HistoryTable
         accounts={accounts.map(({ id, email }) => ({ id, email }))}
       />
     </div>
