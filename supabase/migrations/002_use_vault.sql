@@ -34,8 +34,8 @@ BEGIN
   SELECT access_token_secret_id, refresh_token_secret_id INTO v_old_access_id, v_old_refresh_id
   FROM public.google_tokens WHERE account_id = p_account_id;
 
-  SELECT id INTO v_access_id FROM vault.create_secret(p_access_token, 'access_token_' || p_account_id);
-  SELECT id INTO v_refresh_id FROM vault.create_secret(p_refresh_token, 'refresh_token_' || p_account_id);
+  v_access_id := vault.create_secret(p_access_token, 'access_token_' || p_account_id);
+  v_refresh_id := vault.create_secret(p_refresh_token, 'refresh_token_' || p_account_id);
 
   INSERT INTO public.google_tokens (
     account_id, access_token_secret_id, refresh_token_secret_id, expires_at, updated_at
@@ -89,7 +89,7 @@ CREATE OR REPLACE FUNCTION public.get_decrypted_access_token(p_account_id UUID)
 RETURNS TEXT
 SECURITY DEFINER
 SET search_path = public, vault
-AS $body
+AS $body$
 DECLARE
   v_secret_id UUID;
   v_token TEXT;
@@ -108,7 +108,7 @@ BEGIN
 
   RETURN v_token;
 END;
-$body LANGUAGE plpgsql;
+$body$ LANGUAGE plpgsql;
 
 -- Restrict access to these sensitive RPCs to service_role only
 REVOKE EXECUTE ON FUNCTION public.get_decrypted_refresh_token(UUID) FROM PUBLIC, authenticated, anon;
