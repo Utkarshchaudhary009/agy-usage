@@ -56,3 +56,24 @@ export interface CooldownStatus {
   lastTriggerAt: string | null;
   cooldownEndsAt: string | null;
 }
+
+/** One persisted wakeup trigger outcome (wakeup_logs row). */
+export interface WakeupLogEntry {
+  id: string;
+  accountId: string | null;
+  modelId: string;
+  triggerSource: "manual" | "scheduled" | "quota_reset";
+  success: boolean;
+  durationMs: number | null;
+  error: string | null;
+  responsePreview: string | null;
+  createdAt: string;
+}
+
+/** Success-rate rollups over recent windows. */
+export interface WakeupHistoryStats {
+  total24h: number;
+  succeeded24h: number;
+  total7d: number;
+  succeeded7d: number;
+}

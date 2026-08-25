@@ -3,8 +3,10 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ConfigForm } from "@/components/wakeup/config-form";
+import { WakeupHistory } from "@/components/wakeup/history-table";
 import { createServerClient } from "@/lib/supabase/server";
 import type { WakeupAccountOption } from "@/lib/types/wakeup";
+import { getCooldownStatus } from "@/lib/wakeup/cooldown";
 import { toWakeupConfig } from "@/lib/wakeup/mapper";
 import { defaultWakeupConfig } from "@/lib/wakeup/models";
 
@@ -46,6 +48,7 @@ async function WakeupLoader({ userId }: { userId: string }) {
       .eq("clerk_user_id", userId)
       .order("added_at", { ascending: true }),
   ]);
+  const cooldown = await getCooldownStatus(userId);
 
   if (configResult.error) {
     console.error("Failed to load wakeup config:", configResult.error);
@@ -72,12 +75,20 @@ async function WakeupLoader({ userId }: { userId: string }) {
   // Keying on updatedAt remounts the form when the saved row changes (e.g.
   // edited in another tab) instead of leaving stale draft state behind.
   return (
-    <ConfigForm
-      key={config.updatedAt ?? "new"}
-      initialConfig={config}
-      accounts={accounts}
-      accountsUnavailable={Boolean(accountsResult.error)}
-    />
+    <div className="flex flex-col gap-6">
+      <ConfigForm
+        key={config.updatedAt ?? "new"}
+        initialConfig={config}
+        accounts={accounts}
+        accountsUnavailable={Boolean(accountsResult.error)}
+        lastTriggerAt={
+          cooldown.lastTriggerAt ? new Date(cooldown.lastTriggerAt) : null
+        }
+      />
+      <WakeupHistory
+        accounts={accounts.map(({ id, email }) => ({ id, email }))}
+      />
+    </div>
   );
 }
 
