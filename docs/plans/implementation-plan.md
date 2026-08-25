@@ -1271,6 +1271,22 @@ README.md                           # Updated
 
 ---
 
+## ⚠️ Pending Operator Action (reminder)
+
+> **Google OAuth credentials must be re-set manually** (discovered while rebuilding
+> the Vercel project on 2026-08-25): `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`
+> were recovered as `[SENSITIVE]` masks and are currently placeholder values in
+> Vercel, so Google account linking fails with "invalid client".
+>
+> **Fix**: copy the real Client ID/secret from Google Cloud Console → APIs &
+> Services → Credentials, set them in Vercel → agy-usage → Environment Variables
+> (production + preview), and ensure this redirect URI is whitelisted on that
+> OAuth client:
+> `https://agy-usage.vercel.app/api/auth/google/callback`
+> Then redeploy production.
+
+---
+
 ## Phase Summary Table
 
 | Phase | Feature | Key Tech |
