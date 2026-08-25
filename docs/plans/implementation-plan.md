@@ -867,7 +867,7 @@ src/app/api/quota/history/route.ts
 **Feature**: Configure auto-wakeup schedules (replaces CLI's `wakeup config`)
 
 **Tasks**:
-- [ ] Create migration `004_wakeup.sql`:
+- [x] Create migration `009_wakeup.sql`:
   ```sql
   CREATE TABLE public.wakeup_configs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -904,8 +904,8 @@ src/app/api/quota/history/route.ts
   CREATE INDEX idx_wakeup_logs_time
     ON public.wakeup_logs (clerk_user_id, created_at DESC);
   ```
-- [ ] Build wakeup config page `src/app/(dashboard)/wakeup/page.tsx`
-- [ ] Build config form `src/components/wakeup/config-form.tsx`:
+- [x] Build wakeup config page `src/app/(dashboard)/wakeup/page.tsx`
+- [x] Build config form `src/components/wakeup/config-form.tsx`:
   - Enable/disable toggle
   - Model selector (checkboxes: claude-sonnet-4-5, gemini-3-flash, gemini-3-pro-low)
   - Account selector (which linked accounts to trigger)
@@ -914,18 +914,18 @@ src/app/api/quota/history/route.ts
   - Daily time picker (add/remove times)
   - Custom cron expression input with human-readable preview
   - Save button → PUT `/api/wakeup/config`
-- [ ] Create wakeup config API routes:
+- [x] Create wakeup config API routes:
   - `GET /api/wakeup/config` → get current config
   - `PUT /api/wakeup/config` → update config (validates, then saves)
   - Both verify Clerk auth
-- [ ] Show "next trigger" preview based on schedule
-- [ ] Validate cron expressions server-side
+- [x] Show "next trigger" preview based on schedule
+- [x] Validate cron expressions server-side
 
 **Deliverable**: Users can configure their wakeup schedule through a polished UI. Config saved to Supabase.
 
 **Files**:
 ```
-supabase/migrations/004_wakeup.sql
+supabase/migrations/009_wakeup.sql
 src/app/(dashboard)/wakeup/page.tsx
 src/components/wakeup/config-form.tsx
 src/components/wakeup/model-selector.tsx
@@ -1048,6 +1048,11 @@ src/app/api/wakeup/trigger/route.ts
   )
   ```
 - [ ] Create schedule evaluator `src/lib/wakeup/schedule-evaluator.ts`:
+  > **Decision from Phase 14 review**: schedules evaluate against server time
+  > (UTC) for determinism; the config UI preview converts to the viewer's
+  > browser-local timezone for display only. If per-user local-time schedules
+  > are needed later, add an explicit IANA `timezone` column to
+  > `wakeup_configs` and evaluate daily/cron modes in that zone.
   - `shouldTriggerNow(config, lastTriggerTime): boolean`
   - Interval mode: check if N hours passed since last trigger
   - Daily mode: check if current hour:minute matches any daily_times (±5 min window)
@@ -1233,6 +1238,7 @@ src/components/wakeup/cost-tracker.tsx
 - [ ] Data retention:
   - Create Inngest function for cleanup: delete quota_snapshots older than 90 days
   - Aggregate old data into daily summaries before deletion
+  - Also delete `wakeup_logs` older than 90 days
 - [ ] Documentation:
   - Update `README.md` with setup instructions
   - Document all environment variables
