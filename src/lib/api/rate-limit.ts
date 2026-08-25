@@ -36,7 +36,11 @@ function getLimiter(
   limit: number,
   window: Duration,
 ): Ratelimit | undefined {
-  const cached = limiters.get(bucket);
+  // Key on the full config, not just the bucket: two call sites sharing a
+  // bucket name with different limits must never silently inherit whichever
+  // limiter was memoized first.
+  const cacheKey = `${bucket}:${limit}:${window}`;
+  const cached = limiters.get(cacheKey);
   if (cached) return cached;
 
   const client = getRedis();
@@ -48,7 +52,7 @@ function getLimiter(
     analytics: false,
     prefix: `ratelimit_${bucket}`,
   });
-  limiters.set(bucket, limiter);
+  limiters.set(cacheKey, limiter);
   return limiter;
 }
 

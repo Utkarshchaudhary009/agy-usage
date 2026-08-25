@@ -27,9 +27,11 @@ const MAX_EXPANDED_ACCOUNTS = 50;
 type TriggerSource = "manual" | "scheduled";
 
 /**
- * Returns the user's own linked account ids, used to expand an empty account
- * selection ("trigger all my accounts") into concrete targets and to filter
- * stale ids out of a saved selection.
+ * Returns ALL of the user's own linked account ids (id-only columns, RLS- or
+ * user-scoped so the row count is inherently small). Used both to expand an
+ * empty account selection ("trigger all my accounts") and to filter stale ids
+ * out of a saved selection — the latter must never be capped, or a legitimate
+ * selection would be silently dropped for users with many accounts.
  */
 async function getOwnedAccountIds(
   supabase: SupabaseClient<Database>,
@@ -38,8 +40,7 @@ async function getOwnedAccountIds(
   const { data, error } = await supabase
     .from("google_accounts")
     .select("id")
-    .eq("clerk_user_id", clerkUserId)
-    .limit(MAX_EXPANDED_ACCOUNTS);
+    .eq("clerk_user_id", clerkUserId);
 
   if (error) {
     // Detail stays server-side: the Postgres message leaks schema and policy
@@ -121,6 +122,8 @@ export async function triggerAllModels(
   maxOutputTokens: number,
   options?: WakeupJobOptions,
 ): Promise<TriggerSingleResult[]> {
+  const startTime = Date.now();
+
   // Every model on the same account resolves to the same Cloud Code project,
   // so the lookup (a DB read plus possible loadCodeAssist/onboard round-trips)
   // happens once per account instead of once per model.
@@ -129,12 +132,11 @@ export async function triggerAllModels(
     resolvedProjectId = await resolveProjectId(accountId, options);
   } catch (err: unknown) {
     const error = err instanceof Error ? err.message : String(err);
-    const failedAt = Date.now();
     return models.map((modelId) => ({
       accountId,
       modelId,
       success: false,
-      durationMs: Date.now() - failedAt,
+      durationMs: Date.now() - startTime,
       error,
     }));
   }
@@ -224,17 +226,18 @@ export async function executeWakeup(
 
   // Resolve target accounts before claiming the cooldown window, so a no-op
   // run with no target accounts never stamps a cooldown. An empty selection
-  // means "all of my linked accounts" (per the config UI). A saved selection
-  // is intersected with currently-owned accounts: background jobs bypass RLS
-  // via the service-role client, so a stale id left behind by a concurrent
-  // account deletion must be filtered here rather than trusted.
+  // means "all of my linked accounts" (per the config UI), capped to the same
+  // ceiling config validation enforces for explicit selections. A saved
+  // selection is intersected with currently-owned accounts: background jobs
+  // bypass RLS via the service-role client, so a stale id left behind by a
+  // concurrent account deletion must be filtered here rather than trusted.
   const ownedAccountIds = new Set(
     await getOwnedAccountIds(supabase, clerkUserId),
   );
   const targetAccountIds =
     config.selectedAccountIds.length > 0
       ? config.selectedAccountIds.filter((id) => ownedAccountIds.has(id))
-      : [...ownedAccountIds];
+      : [...ownedAccountIds].slice(0, MAX_EXPANDED_ACCOUNTS);
 
   if (targetAccountIds.length === 0) {
     return {
@@ -273,6 +276,13 @@ export async function executeWakeup(
     };
   }
 
+  const triggerSource: TriggerSource = options?.asBackgroundJob
+    ? "scheduled"
+    : "manual";
+
+  // Log after each account rather than one batch at the end: a platform kill
+  // mid-run (serverless duration limit) then preserves history for every
+  // account that already completed instead of erasing the whole run.
   const allResults: TriggerSingleResult[] = [];
 
   for (const accountId of targetAccountIds) {
@@ -284,12 +294,8 @@ export async function executeWakeup(
       options,
     );
     allResults.push(...results);
+    await logTriggerResults(clerkUserId, results, triggerSource);
   }
-
-  const triggerSource: TriggerSource = options?.asBackgroundJob
-    ? "scheduled"
-    : "manual";
-  await logTriggerResults(clerkUserId, allResults, triggerSource);
 
   return {
     clerkUserId,

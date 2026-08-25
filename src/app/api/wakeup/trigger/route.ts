@@ -17,9 +17,11 @@ import {
 } from "@/lib/wakeup/trigger-service";
 
 // A full run is sequential: each account/model pairing costs up to ~15s
-// (stream timeout) plus a 1s inter-model pause. The default config (3 models)
-// on one or two accounts fits comfortably inside this budget; the cooldown
-// claim prevents pile-ups of overlapping runs.
+// (stream timeout) plus a 1s inter-model pause, so a default config (3 models)
+// fits comfortably within this budget while larger selections may exceed it.
+// executeWakeup logs per account as it goes, so even a platform kill at the
+// duration limit preserves history for accounts that already completed; long
+// multi-account runs belong on the scheduled Inngest path instead.
 export const maxDuration = 60;
 
 interface TriggerBody {

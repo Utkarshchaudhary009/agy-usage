@@ -15,12 +15,28 @@
 ALTER TABLE public.wakeup_configs
   ADD COLUMN IF NOT EXISTS last_run_started_at TIMESTAMPTZ;
 
--- Cooldown state is written only by this RPC. Migration 009 grants no table
--- level UPDATE to `authenticated`; a column added afterwards inherits no
--- column-level grant either, so `authenticated` cannot write
--- last_run_started_at directly. Stated explicitly here so the invariant is not
--- lost if the grants in 009 are ever revisited.
-REVOKE UPDATE (last_run_started_at) ON public.wakeup_configs FROM authenticated, anon;
+-- Cooldown state is written only by claim_wakeup_run(). Supabase's default
+-- privileges give `authenticated` a table-level UPDATE on new tables (the
+-- wakeup config API relies on it), and a column-level REVOKE cannot override
+-- a table-level GRANT — so the only effective protection is the migration-006
+-- pattern: revoke table-level UPDATE entirely, then re-grant exactly the
+-- columns the config API is allowed to write, excluding last_run_started_at.
+REVOKE UPDATE ON public.wakeup_configs FROM authenticated;
+GRANT UPDATE (
+  clerk_user_id,
+  enabled,
+  selected_models,
+  selected_account_ids,
+  schedule_mode,
+  interval_hours,
+  daily_times,
+  cron_expression,
+  custom_prompt,
+  max_output_tokens,
+  cooldown_minutes,
+  wake_on_reset,
+  updated_at
+) ON public.wakeup_configs TO authenticated;
 
 -- Atomically claim the cooldown window for a user.
 --
