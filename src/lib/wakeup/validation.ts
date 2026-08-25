@@ -1,10 +1,9 @@
 import type { ScheduleMode, WakeupConfig } from "@/lib/types/wakeup";
+import { isUuid } from "@/lib/utils";
 import { parseCronExpression } from "./cron";
 import { defaultWakeupConfig, WAKEUP_MODELS } from "./models";
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const LIMITS = {
   selectedModels: 10,
@@ -59,10 +58,7 @@ export function validateWakeupConfigInput(
     raw.selectedAccountIds,
     LIMITS.selectedAccountIds,
   );
-  if (
-    !selectedAccountIds ||
-    !selectedAccountIds.every((id) => UUID_PATTERN.test(id))
-  ) {
+  if (!selectedAccountIds || !selectedAccountIds.every((id) => isUuid(id))) {
     return fail("selectedAccountIds must be an array of account IDs.");
   }
 

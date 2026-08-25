@@ -1,30 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
-import { Ratelimit } from "@upstash/ratelimit";
-import { Redis } from "@upstash/redis";
 import { type NextRequest, NextResponse } from "next/server";
+import { enforceRateLimit } from "@/lib/api/rate-limit";
 import { getQuota, getQuotaAllAccounts } from "@/lib/quota/service";
 import { createServerClient } from "@/lib/supabase/server";
-
-let ratelimit: Ratelimit | undefined;
-if (
-  process.env.UPSTASH_REDIS_REST_URL &&
-  process.env.UPSTASH_REDIS_REST_TOKEN
-) {
-  const redis = new Redis({
-    url: process.env.UPSTASH_REDIS_REST_URL,
-    token: process.env.UPSTASH_REDIS_REST_TOKEN,
-  });
-
-  ratelimit = new Ratelimit({
-    redis,
-    limiter: Ratelimit.slidingWindow(10, "1 m"),
-    analytics: false,
-  });
-} else {
-  console.warn(
-    "Upstash rate limiting is not configured. UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN must be set to enable rate limiting.",
-  );
-}
 
 export async function GET(req: NextRequest) {
   const { userId } = await auth();
@@ -45,26 +23,14 @@ export async function GET(req: NextRequest) {
   const refresh = searchParams.get("refresh") === "true";
 
   if (refresh) {
-    if (ratelimit) {
-      try {
-        const { success } = await ratelimit.limit(
-          `ratelimit_quota_refresh_${userId}`,
-        );
-        if (!success) {
-          return NextResponse.json(
-            {
-              error: "Rate Limit Exceeded",
-              code: "RATE_LIMIT_EXCEEDED",
-              message:
-                "Too many force refreshes. Please try again in a minute.",
-            },
-            { status: 429 },
-          );
-        }
-      } catch (err) {
-        console.error("Failed to check rate limit, failing open:", err);
-      }
-    }
+    const limited = await enforceRateLimit({
+      bucket: "quota_refresh",
+      identifier: userId,
+      limit: 10,
+      window: "1 m",
+      message: "Too many force refreshes. Please try again in a minute.",
+    });
+    if (limited) return limited;
   }
 
   try {

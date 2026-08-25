@@ -17,6 +17,13 @@ export const WAKEUP_MODELS = [
 
 const DEFAULT_MODEL_IDS = WAKEUP_MODELS.map((model) => model.id);
 
+const MODEL_ID_SET = new Set<string>(DEFAULT_MODEL_IDS);
+
+/** Narrows untrusted input to a model id that a wakeup request accepts. */
+export function isWakeupModelId(value: unknown): value is string {
+  return typeof value === "string" && MODEL_ID_SET.has(value);
+}
+
 export const SCHEDULE_MODES: {
   value: ScheduleMode;
   label: string;
