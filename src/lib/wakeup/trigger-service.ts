@@ -64,17 +64,26 @@ async function filterOwnedAccountIds(
   clerkUserId: string,
   candidateIds: string[],
 ): Promise<string[]> {
+  // Bound the .in() payload: config validation caps saved selections at
+  // MAX_EXPANDED_ACCOUNTS, but a row written out-of-band (or before that rule
+  // existed) must not defeat the bound at trigger time.
+  const candidates = candidateIds.slice(0, MAX_EXPANDED_ACCOUNTS);
+
   const { data, error } = await supabase
     .from("google_accounts")
     .select("id")
     .eq("clerk_user_id", clerkUserId)
-    .in("id", candidateIds);
+    .in("id", candidates);
 
   if (error) {
     console.error("Failed to verify accounts for wakeup:", error);
     throw new Error("Failed to verify accounts for wakeup");
   }
-  return (data ?? []).map((row) => row.id);
+
+  // Intersect into candidate order so the trigger loop follows the user's
+  // saved selection deterministically instead of Postgres row order.
+  const owned = new Set((data ?? []).map((row) => row.id));
+  return candidates.filter((id) => owned.has(id));
 }
 
 async function loadWakeupConfig(
