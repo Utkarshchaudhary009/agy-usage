@@ -14,6 +14,10 @@ import { isWakeupModelId } from "@/lib/wakeup/models";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
+const SORT_FIELDS = ["createdAt", "durationMs"] as const;
+type SortField = (typeof SORT_FIELDS)[number];
+const SORT_DIRECTIONS = ["asc", "desc"] as const;
+type SortDirection = (typeof SORT_DIRECTIONS)[number];
 // Pagination is client-driven at 50/page; a ceiling keeps arbitrary
 // deep-offset scans from walking the whole index.
 const MAX_OFFSET = 10_000;
@@ -53,10 +57,24 @@ export async function GET(req: NextRequest) {
       : DEFAULT_LIMIT;
 
   const rawOffset = Number(searchParams.get("offset") ?? 0);
-  const offset =
-    Number.isInteger(rawOffset) && rawOffset >= 0 && rawOffset <= MAX_OFFSET
-      ? rawOffset
-      : 0;
+  // Reject rather than silently rewriting: a clamped/reset offset would serve
+  // page 1 to a caller asking for a deep page, hiding the truncation.
+  if (!Number.isInteger(rawOffset) || rawOffset < 0 || rawOffset > MAX_OFFSET) {
+    return validationFailed(
+      `offset must be an integer between 0 and ${MAX_OFFSET}.`,
+    );
+  }
+  const offset = rawOffset;
+
+  const sortParam = searchParams.get("sort") ?? "createdAt";
+  if (!SORT_FIELDS.includes(sortParam as SortField)) {
+    return validationFailed("sort must be 'createdAt' or 'durationMs'.");
+  }
+  const directionParam = searchParams.get("dir") ?? "desc";
+  if (!SORT_DIRECTIONS.includes(directionParam as SortDirection)) {
+    return validationFailed("dir must be 'asc' or 'desc'.");
+  }
+  const ascending = directionParam === "asc";
 
   // RLS already scopes every read to the calling user's own logs; the
   // explicit clerk_user_id equality keeps that invariant visible here.
@@ -91,9 +109,15 @@ export async function GET(req: NextRequest) {
 
   try {
     const supabase = await createServerClient();
+    // Server-side ordering keeps global sorts correct across offset pages
+    // (client-side reordering would only sort the visible slice); null
+    // durations sort last regardless of direction.
     const [logsResult, stats] = await Promise.all([
       query
-        .order("created_at", { ascending: false })
+        .order(sortParam === "durationMs" ? "duration_ms" : "created_at", {
+          ascending,
+          nullsFirst: false,
+        })
         .range(offset, offset + limit - 1),
       computeStats(supabase, userId),
     ]);
@@ -151,10 +175,15 @@ async function computeStats(
           .eq("success", true)
           .gte("created_at", since),
       ]);
+      // supabase-js reports failures via error + null count rather than
+      // throwing; propagating keeps zero-stats from masking an outage.
+      if (totalRes.error || okRes.error || totalRes.count === null) {
+        throw new Error(`Failed to count wakeup logs (${key})`);
+      }
       return [
         key,
         {
-          total: totalRes.count ?? 0,
+          total: totalRes.count,
           succeeded: okRes.count ?? 0,
         },
       ] as const;

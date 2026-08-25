@@ -4,6 +4,7 @@ import { Loader2, Zap } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import type { TriggerAllResult } from "@/lib/types/wakeup";
 
 interface TriggerButtonProps {
   /** Runs a targeted single-account/model trigger instead of the full config. */
@@ -45,10 +46,12 @@ export function TriggerButton({
         error?: string;
       };
 
+      let completed: TriggerAllResult | null = null;
       if (!res.ok) {
         toast.error(json.message || json.error || "Wakeup trigger failed.");
       } else if (json.skipped) {
         toast.warning(json.skipReason || "Wakeup skipped.");
+        completed = json as unknown as TriggerAllResult;
       } else {
         const results = json.results ?? [];
         const succeeded = results.filter((r) => r.success).length;
@@ -62,7 +65,11 @@ export function TriggerButton({
             toast.error(failure.modelId, { description: failure.error });
           }
         }
+        completed = json as unknown as TriggerAllResult;
       }
+      // Only a completed HTTP response proves the log rows are final; timeout
+      // and network failures may still be mid-write server-side.
+      if (completed) onTriggered?.();
     } catch (err) {
       // TimeoutError means the server is still working; AbortError means this
       // component unmounted. Both differ from a genuine network failure.
@@ -74,9 +81,6 @@ export function TriggerButton({
       );
     } finally {
       setIsRunning(false);
-      // History changed on every completed round-trip (success, skip, or
-      // failure all write logs), so parents refetch unconditionally.
-      onTriggered?.();
     }
   };
 

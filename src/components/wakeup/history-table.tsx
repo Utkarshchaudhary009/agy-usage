@@ -50,8 +50,10 @@ export function HistoryTable({ accounts }: HistoryTableProps) {
       setIsLoading(true);
       try {
         const params = new URLSearchParams({
-          limit: String(PAGE_SIZE),
+          limit: String(PAGE_SIZE + 1),
           offset: String(page * PAGE_SIZE),
+          sort: sortField === "durationMs" ? "durationMs" : "createdAt",
+          dir: sortDesc ? "desc" : "asc",
           // Cache-buster so repeated fetches are always distinct requests.
           nonce: String(fetchNonce),
         });
@@ -73,7 +75,7 @@ export function HistoryTable({ accounts }: HistoryTableProps) {
         setLoadError(false);
         setLogs(json.logs ?? []);
         setStats(json.stats ?? EMPTY_STATS);
-        // A full page hints there may be more; next-page fetch confirms.
+        // Sentinel: request one extra row so an exactly-full page knows more exist.
         setHasMore((json.logs ?? []).length === PAGE_SIZE);
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") return;
@@ -83,7 +85,15 @@ export function HistoryTable({ accounts }: HistoryTableProps) {
         if (!signal.aborted) setIsLoading(false);
       }
     },
-    [page, accountFilter, modelFilter, statusFilter, fetchNonce],
+    [
+      page,
+      accountFilter,
+      modelFilter,
+      statusFilter,
+      sortField,
+      sortDesc,
+      fetchNonce,
+    ],
   );
 
   useEffect(() => {
@@ -107,11 +117,12 @@ export function HistoryTable({ accounts }: HistoryTableProps) {
   }, [logs, sortField, sortDesc]);
 
   const toggleSort = (field: SortField) => {
+    setPage(0);
     if (sortField === field) {
       setSortDesc((prev) => !prev);
     } else {
       setSortField(field);
-      setSortDesc(field === "durationMs");
+      setSortDesc(false);
     }
   };
 

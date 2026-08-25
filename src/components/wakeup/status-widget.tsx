@@ -1,6 +1,7 @@
 "use client";
 
 import { Clock } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -31,6 +32,7 @@ export function StatusWidget({
   lastTriggerAt,
   lastOutcome,
 }: StatusWidgetProps) {
+  const router = useRouter();
   const [now, setNow] = useState<Date | null>(null);
   // Locale/date formatting is client-only so SSR markup matches hydration.
   const [formattedLast, setFormattedLast] = useState<string | null>(null);
@@ -72,7 +74,7 @@ export function StatusWidget({
       <CardContent className="space-y-4">
         <dl className="grid gap-2 text-sm sm:grid-cols-2">
           <div>
-            <dt className="text-muted-foreground">Last trigger</dt>
+            <dt className="text-muted-foreground">Last model result</dt>
             <dd>
               {lastOutcome
                 ? `${formattedLast ?? "…"} · ${
@@ -92,7 +94,11 @@ export function StatusWidget({
             </dd>
           </div>
         </dl>
-        <TriggerButton size="sm" disabled={!config.enabled} />
+        <TriggerButton
+          size="sm"
+          disabled={!config.enabled}
+          onTriggered={() => router.refresh()}
+        />
       </CardContent>
     </Card>
   );
