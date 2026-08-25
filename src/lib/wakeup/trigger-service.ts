@@ -27,26 +27,52 @@ const MAX_EXPANDED_ACCOUNTS = 50;
 type TriggerSource = "manual" | "scheduled";
 
 /**
- * Returns ALL of the user's own linked account ids (id-only columns, RLS- or
- * user-scoped so the row count is inherently small). Used both to expand an
- * empty account selection ("trigger all my accounts") and to filter stale ids
- * out of a saved selection — the latter must never be capped, or a legitimate
- * selection would be silently dropped for users with many accounts.
+ * Returns up to MAX_EXPANDED_ACCOUNTS of the user's own linked account ids,
+ * used to expand an empty selection ("trigger all my accounts") into concrete
+ * targets. The cap mirrors the selectedAccountIds bound enforced by config
+ * validation, so both ways of arriving at a target list share one ceiling.
  */
-async function getOwnedAccountIds(
+async function getExpandedAccountIds(
   supabase: SupabaseClient<Database>,
   clerkUserId: string,
 ): Promise<string[]> {
   const { data, error } = await supabase
     .from("google_accounts")
     .select("id")
-    .eq("clerk_user_id", clerkUserId);
+    .eq("clerk_user_id", clerkUserId)
+    .limit(MAX_EXPANDED_ACCOUNTS);
 
   if (error) {
     // Detail stays server-side: the Postgres message leaks schema and policy
     // names, and this error can surface in a rendered error boundary.
     console.error("Failed to load accounts for wakeup:", error);
     throw new Error("Failed to load accounts for wakeup");
+  }
+  return (data ?? []).map((row) => row.id);
+}
+
+/**
+ * Returns the subset of the given candidate ids the user actually owns, used
+ * to re-validate a saved selection at trigger time (background jobs bypass
+ * RLS via the service-role client, so stale ids from a concurrent deletion
+ * must be filtered by an explicit owner check rather than trusted). Querying
+ * only the candidates keeps this bounded regardless of how many accounts a
+ * user has linked.
+ */
+async function filterOwnedAccountIds(
+  supabase: SupabaseClient<Database>,
+  clerkUserId: string,
+  candidateIds: string[],
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("google_accounts")
+    .select("id")
+    .eq("clerk_user_id", clerkUserId)
+    .in("id", candidateIds);
+
+  if (error) {
+    console.error("Failed to verify accounts for wakeup:", error);
+    throw new Error("Failed to verify accounts for wakeup");
   }
   return (data ?? []).map((row) => row.id);
 }
@@ -225,19 +251,19 @@ export async function executeWakeup(
   }
 
   // Resolve target accounts before claiming the cooldown window, so a no-op
-  // run with no target accounts never stamps a cooldown. An empty selection
-  // means "all of my linked accounts" (per the config UI), capped to the same
-  // ceiling config validation enforces for explicit selections. A saved
-  // selection is intersected with currently-owned accounts: background jobs
-  // bypass RLS via the service-role client, so a stale id left behind by a
-  // concurrent account deletion must be filtered here rather than trusted.
-  const ownedAccountIds = new Set(
-    await getOwnedAccountIds(supabase, clerkUserId),
-  );
+  // run with no target accounts never stamps a cooldown. Both paths are
+  // bounded queries: an empty selection expands to (at most)
+  // MAX_EXPANDED_ACCOUNTS linked accounts; a saved selection is re-validated
+  // against currently-owned accounts so a stale id left behind by a
+  // concurrent account deletion is filtered rather than trusted.
   const targetAccountIds =
     config.selectedAccountIds.length > 0
-      ? config.selectedAccountIds.filter((id) => ownedAccountIds.has(id))
-      : [...ownedAccountIds].slice(0, MAX_EXPANDED_ACCOUNTS);
+      ? await filterOwnedAccountIds(
+          supabase,
+          clerkUserId,
+          config.selectedAccountIds,
+        )
+      : await getExpandedAccountIds(supabase, clerkUserId);
 
   if (targetAccountIds.length === 0) {
     return {
