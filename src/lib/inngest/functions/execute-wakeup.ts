@@ -1,3 +1,5 @@
+import "server-only";
+
 import { isOnCooldown } from "../../wakeup/cooldown";
 import { executeWakeup } from "../../wakeup/trigger-service";
 import { inngest } from "../client";

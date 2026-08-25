@@ -1,3 +1,5 @@
+import "server-only";
+
 import { createServiceClient } from "../../supabase/server";
 import { shouldTriggerNow } from "../../wakeup/schedule-evaluator";
 import { inngest } from "../client";
@@ -62,7 +64,9 @@ export const scheduledWakeup = inngest.createFunction(
         from += CONFIG_PAGE_SIZE;
       }
 
-      return due;
+      // clerk_user_id is unique per config row, but de-dupe defensively so a
+      // future schema change can never double-dispatch a user.
+      return [...new Set(due)];
     });
 
     for (let i = 0; i < dueUserIds.length; i += DISPATCH_BATCH_SIZE) {

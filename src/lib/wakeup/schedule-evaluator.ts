@@ -48,6 +48,10 @@ export function shouldTriggerNow(
       return isDailyDue(config.dailyTimes, now);
     case "custom":
       return isCronDue(config.cronExpression, now);
+    // Unreachable while schedule_mode carries its DB CHECK constraint;
+    // returning false keeps an out-of-band value inert instead of undefined.
+    default:
+      return false;
   }
 }
 
