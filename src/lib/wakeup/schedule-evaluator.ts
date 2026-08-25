@@ -79,8 +79,12 @@ function isDailyDue(dailyTimes: string[], now: Date): boolean {
       const candidate = new Date(now);
       candidate.setDate(candidate.getDate() + dayOffset);
       candidate.setHours(hours, minutes, 0, 0);
+      // Half-open window [0, LOOKBACK): a slot exactly one full window old
+      // belonged to the previous tick (whose window ended inclusive at that
+      // instant), so excluding it here is what prevents top-of-hour daily
+      // times from firing on two consecutive ticks.
       const elapsed = now.getTime() - candidate.getTime();
-      if (elapsed >= 0 && elapsed <= SLOT_LOOKBACK_MS) return true;
+      if (elapsed >= 0 && elapsed < SLOT_LOOKBACK_MS) return true;
     }
   }
   return false;
@@ -91,6 +95,10 @@ function isCronDue(expression: string | null, now: Date): boolean {
   const parsed = parseCronExpression(expression);
   if (!parsed.ok) return false;
 
+  // Window convention matches isDailyDue: nextCronRun searches strictly after
+  // the boundary (exclusive start) and the result must be <= now (inclusive
+  // end). A slot landing exactly on the boundary therefore belongs to the
+  // previous tick, never to two ticks at once.
   const lookbackStart = new Date(now.getTime() - SLOT_LOOKBACK_MS);
   const dueSlot = nextCronRun(parsed.fields, lookbackStart);
   return dueSlot !== null && dueSlot <= now;

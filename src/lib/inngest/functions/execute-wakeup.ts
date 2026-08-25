@@ -29,6 +29,11 @@ export const executeWakeupHandler = inngest.createFunction(
       return { skipped: true, reason: "On cooldown" };
     }
 
+    // Known limitation on retries: if the run fails partway through (some
+    // accounts already triggered), the cooldown claim from the failed attempt
+    // stays stamped, so an Inngest retry observes "On cooldown" and skips
+    // instead of resuming. The remainder runs at the next scheduled tick; the
+    // atomic claim guarantees neither attempt can double-fire an account.
     return step.run("execute", () =>
       executeWakeup(clerkUserId, { asBackgroundJob: true }),
     );

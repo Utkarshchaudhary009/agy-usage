@@ -27,17 +27,24 @@ export const scheduledWakeup = inngest.createFunction(
       const supabase = createServiceClient();
       const now = new Date();
       const due: string[] = [];
-      let from = 0;
+      // Keyset pagination on the unique clerk_user_id: offset pages can skip
+      // or repeat rows when configs change mid-scan, cursors cannot.
+      let cursor: string | null = null;
 
       for (;;) {
-        const { data, error } = await supabase
+        let query = supabase
           .from("wakeup_configs")
           .select(
             "clerk_user_id, enabled, schedule_mode, interval_hours, daily_times, cron_expression, last_run_started_at",
           )
           .eq("enabled", true)
-          .range(from, from + CONFIG_PAGE_SIZE - 1);
+          .order("clerk_user_id")
+          .limit(CONFIG_PAGE_SIZE);
+        if (cursor !== null) {
+          query = query.gt("clerk_user_id", cursor);
+        }
 
+        const { data, error } = await query;
         if (error) {
           throw new Error(`Failed to load wakeup configs: ${error.message}`);
         }
@@ -61,7 +68,7 @@ export const scheduledWakeup = inngest.createFunction(
         }
 
         if ((data ?? []).length < CONFIG_PAGE_SIZE) break;
-        from += CONFIG_PAGE_SIZE;
+        cursor = data[data.length - 1].clerk_user_id;
       }
 
       // clerk_user_id is unique per config row, but de-dupe defensively so a
