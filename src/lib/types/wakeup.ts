@@ -56,3 +56,29 @@ export interface CooldownStatus {
   lastTriggerAt: string | null;
   cooldownEndsAt: string | null;
 }
+
+export type TriggerSource = (typeof TRIGGER_SOURCES)[number];
+
+/** One persisted wakeup trigger outcome (wakeup_logs row). */
+export interface WakeupLogEntry {
+  id: string;
+  accountId: string | null;
+  modelId: string;
+  triggerSource: TriggerSource;
+  success: boolean;
+  durationMs: number | null;
+  error: string | null;
+  responsePreview: string | null;
+  createdAt: string;
+}
+
+/** Success-rate rollups over recent windows. */
+export interface WakeupHistoryStats {
+  total24h: number;
+  succeeded24h: number;
+  total7d: number;
+  succeeded7d: number;
+}
+
+/** Every wakeup_logs.trigger_source value the schema accepts. */
+export const TRIGGER_SOURCES = ["manual", "scheduled", "quota_reset"] as const;

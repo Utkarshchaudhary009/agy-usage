@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ConfigForm } from "@/components/wakeup/config-form";
+import { HistoryTable } from "@/components/wakeup/history-table";
 import { createServerClient } from "@/lib/supabase/server";
 import type { WakeupAccountOption } from "@/lib/types/wakeup";
 import { toWakeupConfig } from "@/lib/wakeup/mapper";
@@ -72,12 +73,22 @@ async function WakeupLoader({ userId }: { userId: string }) {
   // Keying on updatedAt remounts the form when the saved row changes (e.g.
   // edited in another tab) instead of leaving stale draft state behind.
   return (
-    <ConfigForm
-      key={config.updatedAt ?? "new"}
-      initialConfig={config}
-      accounts={accounts}
-      accountsUnavailable={Boolean(accountsResult.error)}
-    />
+    <div className="flex flex-col gap-6">
+      <ConfigForm
+        key={config.updatedAt ?? "new"}
+        initialConfig={config}
+        accounts={accounts}
+        accountsUnavailable={Boolean(accountsResult.error)}
+        lastTriggerAt={
+          configResult.data?.last_run_started_at
+            ? new Date(configResult.data.last_run_started_at)
+            : null
+        }
+      />
+      <HistoryTable
+        accounts={accounts.map(({ id, email }) => ({ id, email }))}
+      />
+    </div>
   );
 }
 

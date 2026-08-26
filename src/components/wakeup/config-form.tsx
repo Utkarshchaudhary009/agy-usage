@@ -21,12 +21,15 @@ interface ConfigFormProps {
   initialConfig: WakeupConfig;
   accounts: WakeupAccountOption[];
   accountsUnavailable: boolean;
+  /** Cooldown anchor (last_run_started_at) for the schedule preview. */
+  lastTriggerAt?: Date | null;
 }
 
 export function ConfigForm({
   initialConfig,
   accounts,
   accountsUnavailable,
+  lastTriggerAt = null,
 }: ConfigFormProps) {
   const router = useRouter();
   const [baseline, setBaseline] = useState<WakeupConfig>(initialConfig);
@@ -217,9 +220,11 @@ export function ConfigForm({
           <CardDescription>When should wakeup triggers fire?</CardDescription>
         </CardHeader>
         <CardContent>
-          {/* lastTriggerAt stays null until Phase 15 wires trigger history in;
-              the preview then anchors interval schedules on the last run. */}
-          <SchedulePicker draft={draft} onChange={patch} lastTriggerAt={null} />
+          <SchedulePicker
+            draft={draft}
+            onChange={patch}
+            lastTriggerAt={lastTriggerAt}
+          />
         </CardContent>
       </Card>
 

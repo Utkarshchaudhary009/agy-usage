@@ -1093,28 +1093,28 @@ src/lib/inngest/functions/index.ts    # Updated
 **Feature**: View trigger history and manually trigger from dashboard
 
 **Tasks**:
-- [ ] Build wakeup history section on wakeup page:
+- [x] Build wakeup history section on wakeup page:
   - Table showing recent triggers
   - Columns: Timestamp, Account, Model, Status (success/fail), Duration, Error
   - Filter by account, model, status
   - Pagination (show last 50)
-- [ ] Build `src/components/wakeup/trigger-button.tsx`:
+- [x] Build `src/components/wakeup/trigger-button.tsx`:
   - "Trigger Now" button with loading spinner
   - Shows progress as each model triggers
   - Success/failure toast notifications
-- [ ] Build `src/components/wakeup/history-table.tsx`:
+- [x] Build `src/components/wakeup/history-table.tsx`:
   - Sortable, filterable table
   - Color-coded status badges (green success, red failed)
   - Expandable rows for error details
-- [ ] Build wakeup status widget `src/components/wakeup/status-widget.tsx`:
+- [x] Build wakeup status widget `src/components/wakeup/status-widget.tsx`:
   - Show on main dashboard as a small card
   - Last trigger result + timestamp
   - Next scheduled trigger time
   - Quick "Trigger Now" button
-- [ ] Create history API route `src/app/api/wakeup/history/route.ts`:
+- [x] Create history API route `src/app/api/wakeup/history/route.ts`:
   - `GET /api/wakeup/history?limit=50&offset=0&account=<id>&status=success|failed`
   - Clerk auth + ownership check
-- [ ] Calculate success rate stats (last 24h, last 7d)
+- [x] Calculate success rate stats (last 24h, last 7d)
 
 **Deliverable**: Full wakeup management with history view and one-click manual trigger.
 
@@ -1125,6 +1125,15 @@ src/components/wakeup/history-table.tsx
 src/components/wakeup/status-widget.tsx
 src/app/api/wakeup/history/route.ts
 ```
+
+> **Implementation notes**: history lives as a section on `/wakeup` (no new nav
+> entry) and the status widget renders on the dashboard home below quota.
+> Success rates come from two head-count queries per window; log reads are
+> user-scoped via RLS. The schedule preview now anchors interval schedules on
+> the real cooldown anchor (`wakeup_configs.last_run_started_at`). Trigger runs
+> are one POST per click (sequential server-side); per-model progress appears
+> via result toasts since the shared rate-limit bucket rules out per-model
+> requests.
 
 ---
 

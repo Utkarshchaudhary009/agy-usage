@@ -4,7 +4,49 @@ import { Suspense } from "react";
 import { DashboardClient } from "@/components/quota/dashboard-client";
 import { QuotaGridSkeleton } from "@/components/quota/skeletons";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { StatusWidget } from "@/components/wakeup/status-widget";
 import { getQuotaAllAccounts } from "@/lib/quota/service";
+import { createServerClient } from "@/lib/supabase/server";
+import { toWakeupConfig } from "@/lib/wakeup/mapper";
+import { defaultWakeupConfig } from "@/lib/wakeup/models";
+
+async function WakeupStatusLoader({ userId }: { userId: string }) {
+  const supabase = await createServerClient();
+  const [configResult, lastLogResult] = await Promise.all([
+    supabase
+      .from("wakeup_configs")
+      .select("*")
+      .eq("clerk_user_id", userId)
+      .maybeSingle(),
+    supabase
+      .from("wakeup_logs")
+      .select("success, created_at")
+      .eq("clerk_user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1),
+  ]);
+  if (configResult.error) {
+    console.error("Failed to load wakeup config:", configResult.error);
+  }
+  if (lastLogResult.error) {
+    console.error("Failed to load wakeup logs:", lastLogResult.error);
+  }
+
+  const row = configResult.data;
+  const lastLog = lastLogResult.data?.[0];
+  return (
+    <StatusWidget
+      config={row ? toWakeupConfig(row) : defaultWakeupConfig()}
+      lastTriggerAt={row?.last_run_started_at ?? null}
+      lastOutcome={
+        lastLog
+          ? { success: lastLog.success, createdAt: lastLog.created_at }
+          : null
+      }
+    />
+  );
+}
 
 async function QuotaDashboardLoader({ userId }: { userId: string }) {
   const snapshots = await getQuotaAllAccounts(userId);
@@ -36,6 +78,9 @@ export default async function Home() {
         </h1>
         <Suspense fallback={<QuotaGridSkeleton />}>
           <QuotaDashboardLoader userId={userId} />
+        </Suspense>
+        <Suspense fallback={<Skeleton className="h-48 rounded-xl" />}>
+          <WakeupStatusLoader userId={userId} />
         </Suspense>
       </div>
     );
