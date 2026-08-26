@@ -1180,7 +1180,7 @@ src/lib/notifications.ts
 ```
 
 > **Implementation notes**: `quota_cache` and `wakeup_logs` joined the
-> `supabase_realtime` publication (migration 012); both keep per-user SELECT
+> `supabase_realtime` publication (migration 011); both keep per-user SELECT
 > RLS so postgres_changes only reaches the owning user. The Inngest polling
 > path now also upserts `quota_cache` and emits `quota/snapshot.saved`, which
 > the detect-reset handler consumes to fan out wakeups for `wake_on_reset`

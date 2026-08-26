@@ -59,7 +59,9 @@ export function DashboardClient({
   }, []);
 
   useEffect(() => {
-    if (!alertsEnabled) return;
+    // The baseline always advances — even while alerts are disabled — so
+    // enabling alerts later compares against fresh state instead of the SSR
+    // snapshot and cannot fire stale transitions.
     const current = snapshots;
     const previousByModel = new Map(
       previousRef.current.flatMap((s) =>
@@ -73,6 +75,7 @@ export function DashboardClient({
           `${snapshot.accountId}:${model.modelId}`,
         );
         if (!previous) continue;
+        if (!alertsEnabled) continue;
         if (!previous.isExhausted && model.isExhausted) {
           notifyModelExhausted(
             model.displayName || model.label,

@@ -3,7 +3,13 @@ import "server-only";
 import { createServiceClient } from "../../supabase/server";
 import { inngest } from "../client";
 
-/** Remaining-percentage at/above which a model counts as fully reset. */
+/**
+ * Known limitation: detection consumes `quota/snapshot.saved`, emitted by the
+ * background polling path. Resets first observed during an interactive user
+ * refresh are picked up by the next 30-minute poll instead of immediately.
+ *
+ * Remaining-percentage at/above which a model counts as fully reset.
+ */
 const RESET_THRESHOLD = 0.999;
 /** How many recent history rows to inspect while pairing consecutive snapshots. */
 const HISTORY_SCAN_LIMIT = 200;

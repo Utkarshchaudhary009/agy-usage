@@ -1,6 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+/** Trailing-coalesce window for burst invalidations (e.g. poll batches). */
+const DEBOUNCE_MS = 1500;
+
 import { useRealtimeClient } from "@/components/providers/realtime-provider";
 
 interface UseRealtimeQuotaOptions {
@@ -13,8 +17,6 @@ interface UseRealtimeQuotaOptions {
 }
 
 interface UseRealtimeQuotaResult {
-  /** ISO timestamp of the last received change, null until one arrives. */
-  lastEventAt: string | null;
   connected: boolean;
 }
 
@@ -31,12 +33,35 @@ export function useRealtimeQuota({
   onInvalidate,
 }: UseRealtimeQuotaOptions): UseRealtimeQuotaResult {
   const supabase = useRealtimeClient();
-  const [lastEventAt, setLastEventAt] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
 
-  // Membership key: the subscription filter only cares about which accounts
-  // are watched, so array identity churn alone must not resubscribe.
-  const accountKey = useMemo(() => accountIds.join(","), [accountIds]);
+  // Membership key: canonicalized so ordering changes don't resubscribe, and
+  // the subscription filter only cares about which accounts are watched.
+  const accountKey = useMemo(
+    () => [...new Set(accountIds)].sort().join(","),
+    [accountIds],
+  );
+
+  // One background poll updates several accounts in quick succession; coalesce
+  // the burst into a single trailing refetch.
+  const onInvalidateRef = useRef(onInvalidate);
+  useEffect(() => {
+    onInvalidateRef.current = onInvalidate;
+  }, [onInvalidate]);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debouncedInvalidate = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      onInvalidateRef.current();
+    }, DEBOUNCE_MS);
+  }, []);
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!supabase || accountKey === "") {
@@ -55,8 +80,7 @@ export function useRealtimeQuota({
           filter: `account_id=in.(${accountKey})`,
         },
         () => {
-          setLastEventAt(new Date().toISOString());
-          onInvalidate();
+          debouncedInvalidate();
         },
       )
       .subscribe((status) => {
@@ -67,7 +91,7 @@ export function useRealtimeQuota({
       void supabase.removeChannel(channel);
       setConnected(false);
     };
-  }, [supabase, accountKey, onInvalidate]);
+  }, [supabase, accountKey, debouncedInvalidate]);
 
-  return { lastEventAt, connected };
+  return { connected };
 }

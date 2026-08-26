@@ -24,15 +24,20 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   const supabase = useSupabaseClient();
   const { userId } = useAuth();
 
-  // App-global: surface scheduled/background wakeup results as they land,
-  // not just runs started from this tab.
-  useRealtimeWakeup(Boolean(userId));
-
   return (
     <RealtimeClientContext.Provider value={supabase}>
+      {/* Subscriptions read the client from context, so they must render
+          inside the Provider element — not in this component's body. */}
+      <WakeupLogSubscriber enabled={Boolean(userId)} />
       {children}
     </RealtimeClientContext.Provider>
   );
+}
+
+/** App-global: surface scheduled/background wakeup results as they land. */
+function WakeupLogSubscriber({ enabled }: { enabled: boolean }) {
+  useRealtimeWakeup(enabled);
+  return null;
 }
 
 export function useRealtimeClient(): SupabaseClient<Database> | null {

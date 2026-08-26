@@ -61,6 +61,11 @@ export function notifyModelReset(modelName: string): void {
   });
 }
 
-export function notifyWakeupComplete(title: string, body: string): void {
-  show(title, { body, tag: "wakeup-complete" });
+export function notifyWakeupComplete(
+  title: string,
+  body: string,
+  /** Unique per event so rapid fan-outs don't replace each other. */
+  tag?: string,
+): void {
+  show(title, { body, tag: tag ?? `wakeup-complete-${Date.now()}` });
 }
