@@ -72,7 +72,23 @@ export async function getCachedQuota(
 }
 
 async function saveToCache(accountId: string, snapshot: QuotaSnapshot) {
-  const supabase = await createServerClient();
+  await cacheSnapshot(accountId, snapshot);
+}
+
+/**
+ * Upserts the quota cache row. Exported so background jobs (Inngest polling)
+ * can keep quota_cache fresh too — user-facing realtime subscriptions key off
+ * this table, and without the background write they would only observe
+ * changes triggered by interactive requests.
+ */
+export async function cacheSnapshot(
+  accountId: string,
+  snapshot: QuotaSnapshot,
+  options?: { asBackgroundJob?: boolean },
+) {
+  const supabase = options?.asBackgroundJob
+    ? createServiceClient()
+    : await createServerClient();
 
   const { error } = await supabase.from("quota_cache").upsert({
     account_id: accountId,

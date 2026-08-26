@@ -1142,26 +1142,26 @@ src/app/api/wakeup/history/route.ts
 **Feature**: Live quota updates and real-time notifications
 
 **Tasks**:
-- [ ] Configure Supabase Realtime for relevant tables:
+- [x] Configure Supabase Realtime for relevant tables:
   - `quota_cache` → live quota updates when Inngest background poll completes
   - `wakeup_logs` → live trigger results
-- [ ] Create Realtime hook `src/hooks/use-realtime-quota.ts`:
+- [x] Create Realtime hook `src/hooks/use-realtime-quota.ts`:
   - Subscribe to `quota_cache` changes for user's account IDs
   - Auto-update UI when new data arrives (from Inngest polling or other tabs)
   - Show "Updated just now" indicator
-- [ ] Add auto-refresh polling as fallback:
+- [x] Add auto-refresh polling as fallback:
   - SWR with 5-minute revalidation interval
   - Supabase Realtime for instant updates when available
-- [ ] Create live countdown timer `src/components/quota/countdown-timer.tsx`:
+- [x] Create live countdown timer `src/components/quota/countdown-timer.tsx`:
   - Client-side timer that counts down to model reset
   - Recalculates from `resetTime` on each data refresh
   - Shows "Resetting..." animation at zero
   - Uses `requestAnimationFrame` or `setInterval(1000)` for smooth updates
-- [ ] Add browser notifications (with permission):
+- [x] Add browser notifications (with permission):
   - Notify when a model becomes exhausted
   - Notify when quota resets (back to 100%)
   - Notify when wakeup trigger completes
-- [ ] Create Inngest function for quota-reset detection `src/lib/inngest/functions/detect-reset.ts`:
+- [x] Create Inngest function for quota-reset detection `src/lib/inngest/functions/detect-reset.ts`:
   ```typescript
   // Triggers when a quota snapshot shows 100% after previously being lower
   // Can auto-trigger wakeup for users with wake_on_reset enabled
@@ -1178,6 +1178,18 @@ src/components/providers/realtime-provider.tsx
 src/lib/inngest/functions/detect-reset.ts
 src/lib/notifications.ts
 ```
+
+> **Implementation notes**: `quota_cache` and `wakeup_logs` joined the
+> `supabase_realtime` publication (migration 012); both keep per-user SELECT
+> RLS so postgres_changes only reaches the owning user. The Inngest polling
+> path now also upserts `quota_cache` and emits `quota/snapshot.saved`, which
+> the detect-reset handler consumes to fan out wakeups for `wake_on_reset`
+> users when a model jumps back to full. The browser Supabase client passes
+> the Clerk JWT via the top-level `accessToken` option — realtime websockets
+> bypass fetch overrides. Polling fallback stays on the existing hand-rolled
+> 5-minute hook instead of adding SWR; countdown timer gained a stable reset
+> callback and a pulsing "Resetting..." state; exhausted/reset transitions
+> raise browser notifications behind an explicit permission button.
 
 ---
 

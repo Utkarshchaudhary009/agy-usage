@@ -1,5 +1,5 @@
 import { saveSnapshot } from "../../quota/history";
-import { fetchQuotaForAccount } from "../../quota/service";
+import { cacheSnapshot, fetchQuotaForAccount } from "../../quota/service";
 import { createServiceClient } from "../../supabase/server";
 import { inngest } from "../client";
 
@@ -75,6 +75,16 @@ export const fetchQuotaHandler = inngest.createFunction(
     await step.run("save-db", () =>
       saveSnapshot(accountId, snapshot, { asBackgroundJob: true }),
     );
+    // Keep quota_cache fresh too: realtime subscribers key off this table,
+    // and without the background write they would only observe changes made
+    // by interactive user requests.
+    await step.run("save-cache", () =>
+      cacheSnapshot(accountId, snapshot, { asBackgroundJob: true }),
+    );
+    await step.sendEvent("emit-snapshot-saved", {
+      name: "quota/snapshot.saved",
+      data: { accountId },
+    });
 
     return { success: true, accountId };
   },
