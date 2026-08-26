@@ -72,16 +72,50 @@ export async function getCachedQuota(
 }
 
 async function saveToCache(accountId: string, snapshot: QuotaSnapshot) {
-  const supabase = await createServerClient();
+  await cacheSnapshot(accountId, snapshot);
+}
+
+/**
+ * Upserts the quota cache row. Exported so background jobs (Inngest polling)
+ * can keep quota_cache fresh too — user-facing realtime subscriptions key off
+ * this table, and without the background write they would only observe
+ * changes triggered by interactive requests.
+ */
+export async function cacheSnapshot(
+  accountId: string,
+  snapshot: QuotaSnapshot,
+  options?: { asBackgroundJob?: boolean },
+) {
+  const supabase = options?.asBackgroundJob
+    ? createServiceClient()
+    : await createServerClient();
+
+  // Out-of-order guard: a slow background poll must not overwrite a newer
+  // interactive snapshot (or reset its cached_at), or realtime subscribers
+  // would be served regressed data flagged as fresh.
+  const { data: existing } = await supabase
+    .from("quota_cache")
+    .select("cached_at")
+    .eq("account_id", accountId)
+    .maybeSingle();
+  const newAt = snapshot.timestamp;
+  if (existing?.cached_at && existing.cached_at >= newAt) {
+    return;
+  }
 
   const { error } = await supabase.from("quota_cache").upsert({
     account_id: accountId,
     snapshot: snapshot as unknown as import("../types/database").Json,
-    cached_at: new Date().toISOString(),
+    cached_at: newAt,
   });
 
   if (error) {
     console.error("Failed to save quota to cache:", error);
+    // Background callers (Inngest) retry on throw; interactive failures stay
+    // non-fatal since the fetch itself succeeded and history was written.
+    if (options?.asBackgroundJob) {
+      throw new Error(`Failed to save quota cache: ${error.message}`);
+    }
   }
 }
 

@@ -6,7 +6,11 @@ import { resolveProjectId } from "@/lib/google/project-resolver";
 import { getValidAccessToken } from "@/lib/google/token-manager";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/types/database";
-import type { TriggerAllResult, TriggerSingleResult } from "@/lib/types/wakeup";
+import type {
+  TriggerAllResult,
+  TriggerSingleResult,
+  TriggerSource,
+} from "@/lib/types/wakeup";
 import type { WakeupJobOptions } from "./cooldown";
 import { toWakeupConfig } from "./mapper";
 
@@ -23,8 +27,6 @@ const RESPONSE_PREVIEW_LENGTH = 200;
  * arriving at a target list share one ceiling.
  */
 const MAX_EXPANDED_ACCOUNTS = 50;
-
-type TriggerSource = "manual" | "scheduled";
 
 /**
  * Returns up to MAX_EXPANDED_ACCOUNTS of the user's own linked account ids,
@@ -241,9 +243,18 @@ export async function logTriggerResults(
  * claim_wakeup_run(), so a manual trigger racing a scheduled run cannot
  * double-fire against Google.
  */
+export interface ExecuteWakeupOptions extends WakeupJobOptions {
+  /**
+   * Overrides the wakeup_logs trigger_source (defaults: "scheduled" for
+   * background jobs, "manual" otherwise). Used by the quota-reset path so
+   * history distinguishes why a run fired.
+   */
+  triggerSource?: TriggerSource;
+}
+
 export async function executeWakeup(
   clerkUserId: string,
-  options?: WakeupJobOptions,
+  options?: ExecuteWakeupOptions,
 ): Promise<TriggerAllResult> {
   const supabase = options?.asBackgroundJob
     ? createServiceClient()
@@ -311,9 +322,9 @@ export async function executeWakeup(
     };
   }
 
-  const triggerSource: TriggerSource = options?.asBackgroundJob
-    ? "scheduled"
-    : "manual";
+  const triggerSource: TriggerSource =
+    options?.triggerSource ??
+    (options?.asBackgroundJob ? "scheduled" : "manual");
 
   // Log after each account rather than one batch at the end: a platform kill
   // mid-run (serverless duration limit) then preserves history for every

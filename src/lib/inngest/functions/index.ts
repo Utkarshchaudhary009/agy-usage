@@ -1,3 +1,4 @@
+import { detectQuotaReset } from "./detect-reset";
 import { executeWakeupHandler } from "./execute-wakeup";
 import { fetchQuotaHandler, pollQuota } from "./poll-quota";
 import { scheduledWakeup } from "./scheduled-wakeup";
@@ -10,4 +11,5 @@ export const functions = [
   fetchQuotaHandler,
   scheduledWakeup,
   executeWakeupHandler,
+  detectQuotaReset,
 ];

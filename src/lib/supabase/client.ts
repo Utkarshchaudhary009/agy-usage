@@ -6,7 +6,7 @@ import { useMemo } from "react";
 import type { Database } from "../types/database";
 import { requireSupabaseEnv } from "./env";
 
-// Browser client (for Realtime subscriptions only)
+// Browser client (for Realtime subscriptions and authenticated REST calls)
 export function useSupabaseClient() {
   const { session } = useSession();
 
@@ -35,6 +35,19 @@ export function useSupabaseClient() {
 
           return fetch(fetchUrl, { ...options, headers });
         },
+      },
+      // Realtime websockets bypass the fetch override above entirely — channel
+      // authorization uses this token directly. Without it, postgres_changes
+      // subscriptions join as anon and RLS-filtered tables deliver nothing.
+      accessToken: async () => {
+        try {
+          return (await session?.getToken()) ?? null;
+        } catch (e: unknown) {
+          if (e instanceof Error && e.name === "ClerkOfflineError") {
+            return null;
+          }
+          throw e;
+        }
       },
     });
   }, [session]);

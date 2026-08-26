@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { TriggerSource } from "../../types/wakeup";
 import { isOnCooldown } from "../../wakeup/cooldown";
 import { executeWakeup } from "../../wakeup/trigger-service";
 import { inngest } from "../client";
@@ -19,6 +20,14 @@ export const executeWakeupHandler = inngest.createFunction(
       return { skipped: true, reason: "Missing clerkUserId in event payload" };
     }
 
+    // Optional provenance from the dispatcher (e.g. quota-reset fan-out);
+    // anything unrecognized falls back to the scheduled default.
+    const triggerSource: TriggerSource | undefined =
+      event.data?.triggerSource === "quota_reset" ||
+      event.data?.triggerSource === "manual"
+        ? (event.data.triggerSource as TriggerSource)
+        : undefined;
+
     // Cheap pre-check before the real work; the authoritative duplicate guard
     // is the atomic claim_wakeup_run() inside executeWakeup, which serializes
     // concurrent manual/scheduled runs on the user's config row.
@@ -35,7 +44,10 @@ export const executeWakeupHandler = inngest.createFunction(
     // instead of resuming. The remainder runs at the next scheduled tick; the
     // atomic claim guarantees neither attempt can double-fire an account.
     return step.run("execute", () =>
-      executeWakeup(clerkUserId, { asBackgroundJob: true }),
+      executeWakeup(clerkUserId, {
+        asBackgroundJob: true,
+        triggerSource,
+      }),
     );
   },
 );
