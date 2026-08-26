@@ -73,10 +73,12 @@ export function HistoryTable({ accounts }: HistoryTableProps) {
           return;
         }
         setLoadError(false);
-        setLogs(json.logs ?? []);
+        const rows = json.logs ?? [];
+        // Sentinel: request one extra row so an exactly-full page knows more
+        // exist; the sentinel itself is never rendered.
+        setHasMore(rows.length > PAGE_SIZE);
+        setLogs(rows.slice(0, PAGE_SIZE));
         setStats(json.stats ?? EMPTY_STATS);
-        // Sentinel: request one extra row so an exactly-full page knows more exist.
-        setHasMore((json.logs ?? []).length === PAGE_SIZE);
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") return;
         setLoadError(true);
@@ -101,20 +103,6 @@ export function HistoryTable({ accounts }: HistoryTableProps) {
     void load(controller.signal);
     return () => controller.abort();
   }, [load]);
-
-  const sorted = useMemo(() => {
-    const copy = [...logs];
-    copy.sort((a, b) => {
-      const dir = sortDesc ? -1 : 1;
-      if (sortField === "durationMs") {
-        return ((a.durationMs ?? 0) - (b.durationMs ?? 0)) * dir;
-      }
-      return (
-        ((Date.parse(a.createdAt) || 0) - (Date.parse(b.createdAt) || 0)) * dir
-      );
-    });
-    return copy;
-  }, [logs, sortField, sortDesc]);
 
   const toggleSort = (field: SortField) => {
     setPage(0);
@@ -266,7 +254,7 @@ export function HistoryTable({ accounts }: HistoryTableProps) {
                 </td>
               </tr>
             )}
-            {!isLoading && !loadError && sorted.length === 0 && (
+            {!isLoading && !loadError && logs.length === 0 && (
               <tr>
                 <td
                   colSpan={7}
@@ -277,7 +265,7 @@ export function HistoryTable({ accounts }: HistoryTableProps) {
               </tr>
             )}
             {!isLoading &&
-              sorted.map((log) => {
+              logs.map((log) => {
                 const isExpanded = expandedId === log.id;
                 const detail =
                   log.error ||
